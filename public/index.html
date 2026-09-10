@@ -8331,10 +8331,39 @@
         return;
       }
 
-      // 2. Determine Action Order for Attacks
-      const sSlot = streamerTeam[streamerActiveIdx];
-      const vSlot = viewersTeam[viewersActiveIdx];
+      // 2. Pre-Move Mega Evolution Phase (최우선 메가진화 발동 단계)
+      // 공식 룰: 교체 후, 일반 공격 기술이 나가기 전에 메가진화 연출이 우선 발생.
+      // 양쪽 플레이어가 모두 메가진화를 선택했다면 메가진화 전 원래 스피드 순서대로 연출 진행.
+      const streamerWantsMega = sAct.type === 'move' && sAct.isMega && !sSlot.isMega;
+      const viewersWantsMega = vAct.type === 'move' && vAct.isMega && !vSlot.isMega;
 
+      if (streamerWantsMega && viewersWantsMega) {
+        // 둘 다 메가진화 시: 메가진화 전 원래 스피드 비교 (스카프/도구 보정 포함)
+        let sPreSpeed = sSlot.pokemon.stats.spe;
+        if (sSlot.item === 'choice_scarf') sPreSpeed = Math.floor(sPreSpeed * 1.5);
+        let vPreSpeed = vSlot.pokemon.stats.spe;
+        if (vSlot.item === 'choice_scarf') vPreSpeed = Math.floor(vPreSpeed * 1.5);
+
+        const streamerMegaFirst = sPreSpeed >= vPreSpeed;
+        if (streamerMegaFirst) {
+          await executeMegaEvolution('streamer');
+          await battleSleep(250);
+          await executeMegaEvolution('viewers');
+        } else {
+          await executeMegaEvolution('viewers');
+          await battleSleep(250);
+          await executeMegaEvolution('streamer');
+        }
+        await battleSleep(200);
+      } else if (streamerWantsMega) {
+        await executeMegaEvolution('streamer');
+        await battleSleep(200);
+      } else if (viewersWantsMega) {
+        await executeMegaEvolution('viewers');
+        await battleSleep(200);
+      }
+
+      // 3. Move Execution Phase (기술 실행 단계 - 메가진화 완료 후 스피드 및 기술 우선도로 선후공 판정)
       if (sAct.type === 'move' && vAct.type === 'move') {
         const sMove = sAct.move;
         const vMove = vAct.move;
@@ -8342,6 +8371,7 @@
         const sPriority = (sMove.name === '전광석화' || sMove.name === '신속' || sMove.name === '야습' || sMove.name === '기습') ? 1 : 0;
         const vPriority = (vMove.name === '전광석화' || vMove.name === '신속' || vMove.name === '야습' || vMove.name === '기습') ? 1 : 0;
 
+        // 메가진화 완료 후의 현재 최신 스피드로 행동 순서 계산 (7세대 공식 개정 룰)
         let sSpeed = sSlot.pokemon.stats.spe;
         if (sSlot.item === 'choice_scarf') sSpeed = Math.floor(sSpeed * 1.5);
         let vSpeed = vSlot.pokemon.stats.spe;
@@ -8358,7 +8388,7 @@
         const secondAct = streamerFirst ? vAct : sAct;
 
         // Attack 1
-        const firstFainted = await executeSingleAttack(firstActor, firstAct.move, firstAct.isMega);
+        const firstFainted = await executeSingleAttack(firstActor, firstAct.move, false);
         if (firstFainted) {
           await handleFaintPhase(firstActor === 'streamer' ? 'viewers' : 'streamer');
           return;
@@ -8367,19 +8397,19 @@
         await battleSleep(280);
 
         // Attack 2 (if defender didn't faint)
-        const secondFainted = await executeSingleAttack(secondActor, secondAct.move, secondAct.isMega);
+        const secondFainted = await executeSingleAttack(secondActor, secondAct.move, false);
         if (secondFainted) {
           await handleFaintPhase(secondActor === 'streamer' ? 'viewers' : 'streamer');
           return;
         }
       } else if (sAct.type === 'move' && vAct.type === 'switch') {
-        const fainted = await executeSingleAttack('streamer', sAct.move, sAct.isMega);
+        const fainted = await executeSingleAttack('streamer', sAct.move, false);
         if (fainted) {
           await handleFaintPhase('viewers');
           return;
         }
       } else if (sAct.type === 'switch' && vAct.type === 'move') {
-        const fainted = await executeSingleAttack('viewers', vAct.move, vAct.isMega);
+        const fainted = await executeSingleAttack('viewers', vAct.move, false);
         if (fainted) {
           await handleFaintPhase('streamer');
           return;
