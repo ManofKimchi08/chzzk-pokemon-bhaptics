@@ -6,7 +6,7 @@
 [![bHaptics SDK](https://img.shields.io/badge/bHaptics-TactSuit_X40_%2F_X16-FF6B00?style=for-the-badge&logo=virtualreality&logoColor=white)](https://www.bhaptics.com/)
 [![CHZZK Live](https://img.shields.io/badge/CHZZK-Live_Streaming-00FFA3?style=for-the-badge&logo=naver&logoColor=black)](https://chzzk.naver.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue?style=for-the-badge)](https://github.com/ManofKimchi08/chzzk-pokemon-bhaptics/releases)
+[![Release](https://img.shields.io/badge/Release-v1.0.1-blue?style=for-the-badge)](https://github.com/ManofKimchi08/chzzk-pokemon-bhaptics/releases)
 
 <br/>
 

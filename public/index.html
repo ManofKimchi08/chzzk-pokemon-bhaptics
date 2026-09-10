@@ -7075,6 +7075,8 @@
       showToast(`👑 ${getStreamerName()} 행동 선택 완료! 🔒 (다시 클릭시 취소)`, '🎯');
       updateStreamerControllerPopout();
     }
+    const selectStreamerMove = handleStreamerMoveSelect;
+    window.selectStreamerMove = handleStreamerMoveSelect;
 
     function handleStreamerSwitchSelect(targetIdx) {
       if (pokeBattleState.phase !== 'simultaneous_turn' && pokeBattleState.phase !== 'streamer_turn') return;
@@ -8331,11 +8333,15 @@
         return;
       }
 
+      // Always grab current active slots after any switches!
+      const sSlot = streamerTeam[streamerActiveIdx];
+      const vSlot = viewersTeam[viewersActiveIdx];
+
       // 2. Pre-Move Mega Evolution Phase (최우선 메가진화 발동 단계)
       // 공식 룰: 교체 후, 일반 공격 기술이 나가기 전에 메가진화 연출이 우선 발생.
       // 양쪽 플레이어가 모두 메가진화를 선택했다면 메가진화 전 원래 스피드 순서대로 연출 진행.
-      const streamerWantsMega = sAct.type === 'move' && sAct.isMega && !sSlot.isMega;
-      const viewersWantsMega = vAct.type === 'move' && vAct.isMega && !vSlot.isMega;
+      const streamerWantsMega = sAct && sAct.type === 'move' && sAct.isMega && !sSlot.isMega;
+      const viewersWantsMega = vAct && vAct.type === 'move' && vAct.isMega && !vSlot.isMega;
 
       if (streamerWantsMega && viewersWantsMega) {
         // 둘 다 메가진화 시: 메가진화 전 원래 스피드 비교 (스카프/도구 보정 포함)
@@ -8368,8 +8374,15 @@
         const sMove = sAct.move;
         const vMove = vAct.move;
 
-        const sPriority = (sMove.name === '전광석화' || sMove.name === '신속' || sMove.name === '야습' || sMove.name === '기습') ? 1 : 0;
-        const vPriority = (vMove.name === '전광석화' || vMove.name === '신속' || vMove.name === '야습' || vMove.name === '기습') ? 1 : 0;
+        function getMovePriority(m) {
+          if (!m) return 0;
+          if (m.name === '신속') return 2;
+          if (m.name === '전광석화' || m.name === '야습' || m.name === '기습') return 1;
+          return 0;
+        }
+
+        const sPriority = getMovePriority(sMove);
+        const vPriority = getMovePriority(vMove);
 
         // 메가진화 완료 후의 현재 최신 스피드로 행동 순서 계산 (7세대 공식 개정 룰)
         let sSpeed = sSlot.pokemon.stats.spe;
@@ -8380,7 +8393,9 @@
         let streamerFirst = true;
         if (sPriority > vPriority) streamerFirst = true;
         else if (vPriority > sPriority) streamerFirst = false;
-        else streamerFirst = sSpeed >= vSpeed;
+        else if (sSpeed > vSpeed) streamerFirst = true;
+        else if (vSpeed > sSpeed) streamerFirst = false;
+        else streamerFirst = Math.random() < 0.5; // 공식 룰: 동스피드 50% 난수 결정
 
         const firstActor = streamerFirst ? 'streamer' : 'viewers';
         const secondActor = streamerFirst ? 'viewers' : 'streamer';
@@ -8390,7 +8405,7 @@
         // Attack 1
         const firstFainted = await executeSingleAttack(firstActor, firstAct.move, false);
         if (firstFainted) {
-          await handleFaintPhase(firstActor === 'streamer' ? 'viewers' : 'streamer');
+          await checkAndResolveTurnFaints();
           return;
         }
 
@@ -8399,19 +8414,19 @@
         // Attack 2 (if defender didn't faint)
         const secondFainted = await executeSingleAttack(secondActor, secondAct.move, false);
         if (secondFainted) {
-          await handleFaintPhase(secondActor === 'streamer' ? 'viewers' : 'streamer');
+          await checkAndResolveTurnFaints();
           return;
         }
       } else if (sAct.type === 'move' && vAct.type === 'switch') {
         const fainted = await executeSingleAttack('streamer', sAct.move, false);
         if (fainted) {
-          await handleFaintPhase('viewers');
+          await checkAndResolveTurnFaints();
           return;
         }
       } else if (sAct.type === 'switch' && vAct.type === 'move') {
         const fainted = await executeSingleAttack('viewers', vAct.move, false);
         if (fainted) {
-          await handleFaintPhase('streamer');
+          await checkAndResolveTurnFaints();
           return;
         }
       }
@@ -8756,8 +8771,13 @@
       }
 
       // Faint Check
+      let defDied = false;
+      let atkDied = false;
+
       if (defenderSlot.currentHP <= 0) {
+        defenderSlot.currentHP = 0;
         defenderSlot.fainted = true;
+        defDied = true;
         if (defenderSpr) defenderSpr.classList.add('poke-sprite-fainted');
         renderArenaTeamBallsHUD();
         if (window.pokeSoundEngine) {
@@ -8765,10 +8785,12 @@
         }
         await battleSleep(350);
         setBattleDialogue(`💀 <b>${defender.name}</b>은(는) 쓰러졌다!`);
-        return true;
       }
+
       if (attackerSlot.currentHP <= 0) {
+        attackerSlot.currentHP = 0;
         attackerSlot.fainted = true;
+        atkDied = true;
         if (attackerSpr) attackerSpr.classList.add('poke-sprite-fainted');
         renderArenaTeamBallsHUD();
         if (window.pokeSoundEngine) {
@@ -8776,10 +8798,9 @@
         }
         await battleSleep(350);
         setBattleDialogue(`💀 <b>${attacker.name}</b>은(는) 반동으로 쓰러졌다!`);
-        return true;
       }
 
-      return false;
+      return defDied || atkDied;
     }
 
     async function handleRoundEndEffects() {
@@ -8810,31 +8831,65 @@
     }
 
     // --- Faint Phase & Replacement Selection ---
-    async function handleFaintPhase(faintedSide) {
+    async function checkAndResolveTurnFaints() {
+      const sSlot = streamerTeam[streamerActiveIdx];
+      const vSlot = viewersTeam[viewersActiveIdx];
+      const sFainted = !sSlot || sSlot.fainted || sSlot.currentHP <= 0;
+      const vFainted = !vSlot || vSlot.fainted || vSlot.currentHP <= 0;
+
+      if (!sFainted && !vFainted) {
+        return false;
+      }
+
       const teamSize = pokeBattleMode === '3v3' ? 3 : 1;
-      const team = faintedSide === 'streamer' ? streamerTeam : viewersTeam;
-      const aliveSlots = [];
-
+      const sAlive = [];
+      const vAlive = [];
       for (let i = 0; i < teamSize; i++) {
-        if (!team[i].fainted && team[i].currentHP > 0) {
-          aliveSlots.push(i);
-        }
+        if (streamerTeam[i] && !streamerTeam[i].fainted && streamerTeam[i].currentHP > 0) sAlive.push(i);
+        if (viewersTeam[i] && !viewersTeam[i].fainted && viewersTeam[i].currentHP > 0) vAlive.push(i);
       }
 
-      // If no alive members left -> Match Over!
-      if (aliveSlots.length === 0) {
-        const winner = faintedSide === 'streamer' ? 'viewers' : 'streamer';
-        finishPokeBattle(winner);
-        return;
+      // Check wipeout conditions
+      if (sAlive.length === 0 && vAlive.length === 0) {
+        // Double faint with no bench Pokemon remaining
+        finishPokeBattle('viewers');
+        return true;
+      }
+      if (sAlive.length === 0) {
+        finishPokeBattle('viewers');
+        return true;
+      }
+      if (vAlive.length === 0) {
+        finishPokeBattle('streamer');
+        return true;
       }
 
-      // Prompt Replacement
-      currentFaintTarget = faintedSide;
-      if (faintedSide === 'streamer') {
-        openStreamerFaintSwitchModal(aliveSlots);
-      } else {
-        openViewersFaintSwitchVote(aliveSlots);
+      // Streamer fainted, viewers alive
+      if (sFainted && !vFainted) {
+        currentFaintTarget = 'streamer';
+        openStreamerFaintSwitchModal(sAlive);
+        return true;
       }
+
+      // Viewers fainted, streamer alive
+      if (vFainted && !sFainted) {
+        currentFaintTarget = 'viewers';
+        openViewersFaintSwitchVote(vAlive);
+        return true;
+      }
+
+      // Both active fainted (3v3 mode with bench remaining on both sides)
+      if (sFainted && vFainted) {
+        currentFaintTarget = 'both';
+        openStreamerFaintSwitchModal(sAlive);
+        return true;
+      }
+
+      return false;
+    }
+
+    async function handleFaintPhase(faintedSide) {
+      await checkAndResolveTurnFaints();
     }
 
     function openStreamerFaintSwitchModal(aliveSlots) {
@@ -8925,6 +8980,22 @@
 
       setBattleDialogue(`👑 <b>[${getStreamerName()}]</b>은(는) <b>[${streamerTeam[idx].pokemon.name}]</b>(을)를 출전시켰다!`);
       await battleSleep(350);
+
+      // Double faint check in 3v3: if viewers active slot is also fainted, transition to viewers replacement
+      const teamSize = pokeBattleMode === '3v3' ? 3 : 1;
+      const vSlot = viewersTeam[viewersActiveIdx];
+      if (vSlot && (vSlot.fainted || vSlot.currentHP <= 0)) {
+        const vAlive = [];
+        for (let i = 0; i < teamSize; i++) {
+          if (viewersTeam[i] && !viewersTeam[i].fainted && viewersTeam[i].currentHP > 0) vAlive.push(i);
+        }
+        if (vAlive.length === 0) {
+          finishPokeBattle('streamer');
+          return;
+        }
+        openViewersFaintSwitchVote(vAlive);
+        return;
+      }
 
       pokeBattleState.round++;
       pokeBattleState.stats.totalRounds++;
@@ -9081,6 +9152,22 @@
 
       setBattleDialogue(`👥 <b>시청자 연합</b>은 <b>[${viewersTeam[chosenSlotIdx].pokemon.name}]</b>(을)를 출전시켰다!`);
       await battleSleep(350);
+
+      // Double faint check in 3v3: if streamer active slot is also fainted, transition to streamer replacement
+      const teamSize = pokeBattleMode === '3v3' ? 3 : 1;
+      const sSlot = streamerTeam[streamerActiveIdx];
+      if (sSlot && (sSlot.fainted || sSlot.currentHP <= 0)) {
+        const sAlive = [];
+        for (let i = 0; i < teamSize; i++) {
+          if (streamerTeam[i] && !streamerTeam[i].fainted && streamerTeam[i].currentHP > 0) sAlive.push(i);
+        }
+        if (sAlive.length === 0) {
+          finishPokeBattle('viewers');
+          return;
+        }
+        openStreamerFaintSwitchModal(sAlive);
+        return;
+      }
 
       pokeBattleState.round++;
       pokeBattleState.stats.totalRounds++;
