@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="chzzkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffa3" />
+      <stop offset="100%" stop-color="#00c87a" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#00ffa3" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background Squircle / Rounded Rect -->
+  <rect x="8" y="8" width="112" height="112" rx="28" ry="28" fill="url(#chzzkGrad)" filter="url(#glow)" />
+
+  <!-- Inner Subtle Accent Border -->
+  <rect x="9" y="9" width="110" height="110" rx="27" ry="27" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.3" />
+
+  <!-- "CB" Stylized Bold Lettering -->
+  <text x="64" y="83" 
+        font-family="'Outfit', 'Pretendard', 'Montserrat', 'Arial Black', sans-serif" 
+        font-size="62" 
+        font-weight="900" 
+        letter-spacing="-2px"
+        fill="#080c12" 
+        text-anchor="middle">CB</text>
+</svg>

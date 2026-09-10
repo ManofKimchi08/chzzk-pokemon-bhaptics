@@ -1,0 +1,53 @@
+{
+    "sink": {
+        "kind": "bhaptics",
+        "app_id": "",
+        "api_key": "",
+        "motor_count": 32,
+        "front_gain": 1.0,
+        "back_gain": 1.0,
+        "ws_url": "ws://127.0.0.1:15888/v2/feedbacks",
+        "master_intensity": 100
+    },
+    "details": {
+        "front_balance": 95,
+        "back_balance": 85,
+        "light": {
+            "intensity": 85,
+            "duration": 0.28,
+            "hit_count": 1,
+            "position": "All"
+        },
+        "medium": {
+            "intensity": 92,
+            "duration": 0.4,
+            "hit_count": 2,
+            "position": "All"
+        },
+        "heavy": {
+            "intensity": 100,
+            "duration": 0.5,
+            "hit_count": 3,
+            "position": "All"
+        },
+        "critical": {
+            "intensity": 100,
+            "duration": 0.6,
+            "hit_count": 4,
+            "position": "All"
+        },
+        "faint": {
+            "intensity": 100,
+            "duration": 0.9,
+            "hit_count": 2,
+            "position": "All"
+        },
+        "heartbeat": {
+            "intensity": 75,
+            "duration": 0.2,
+            "hit_count": 1,
+            "position": "VestFront"
+        }
+    },
+    "enable_heartbeat": true
+}

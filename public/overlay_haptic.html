@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>bHaptics 실시간 모터 피격 오버레이</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCI+DQogIDxkZWZzPg0KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iY2h6emtHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4NCiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMwMGZmYTMiIC8+DQogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMwMGM4N2EiIC8+DQogICAgPC9saW5lYXJHcmFkaWVudD4NCiAgICA8ZmlsdGVyIGlkPSJnbG93IiB4PSItMjAlIiB5PSItMjAlIiB3aWR0aD0iMTQwJSIgaGVpZ2h0PSIxNDAlIj4NCiAgICAgIDxmZURyb3BTaGFkb3cgZHg9IjAiIGR5PSIyIiBzdGREZXZpYXRpb249IjQiIGZsb29kLWNvbG9yPSIjMDBmZmEzIiBmbG9vZC1vcGFjaXR5PSIwLjQiIC8+DQogICAgPC9maWx0ZXI+DQogIDwvZGVmcz4NCg0KICA8IS0tIEJhY2tncm91bmQgU3F1aXJjbGUgLyBSb3VuZGVkIFJlY3QgLS0+DQogIDxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIxMTIiIGhlaWdodD0iMTEyIiByeD0iMjgiIHJ5PSIyOCIgZmlsbD0idXJsKCNjaHp6a0dyYWQpIiBmaWx0ZXI9InVybCgjZ2xvdykiIC8+DQoNCiAgPCEtLSBJbm5lciBTdWJ0bGUgQWNjZW50IEJvcmRlciAtLT4NCiAgPHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjExMCIgaGVpZ2h0PSIxMTAiIHJ4PSIyNyIgcnk9IjI3IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLW9wYWNpdHk9IjAuMyIgLz4NCg0KICA8IS0tICJDQiIgU3R5bGl6ZWQgQm9sZCBMZXR0ZXJpbmcgLS0+DQogIDx0ZXh0IHg9IjY0IiB5PSI4MyIgDQogICAgICAgIGZvbnQtZmFtaWx5PSInT3V0Zml0JywgJ1ByZXRlbmRhcmQnLCAnTW9udHNlcnJhdCcsICdBcmlhbCBCbGFjaycsIHNhbnMtc2VyaWYiIA0KICAgICAgICBmb250LXNpemU9IjYyIiANCiAgICAgICAgZm9udC13ZWlnaHQ9IjkwMCIgDQogICAgICAgIGxldHRlci1zcGFjaW5nPSItMnB4Ig0KICAgICAgICBmaWxsPSIjMDgwYzEyIiANCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSI+Q0I8L3RleHQ+DQo8L3N2Zz4NCg==">
+  <link rel="shortcut icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCI+DQogIDxkZWZzPg0KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iY2h6emtHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4NCiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMwMGZmYTMiIC8+DQogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMwMGM4N2EiIC8+DQogICAgPC9saW5lYXJHcmFkaWVudD4NCiAgICA8ZmlsdGVyIGlkPSJnbG93IiB4PSItMjAlIiB5PSItMjAlIiB3aWR0aD0iMTQwJSIgaGVpZ2h0PSIxNDAlIj4NCiAgICAgIDxmZURyb3BTaGFkb3cgZHg9IjAiIGR5PSIyIiBzdGREZXZpYXRpb249IjQiIGZsb29kLWNvbG9yPSIjMDBmZmEzIiBmbG9vZC1vcGFjaXR5PSIwLjQiIC8+DQogICAgPC9maWx0ZXI+DQogIDwvZGVmcz4NCg0KICA8IS0tIEJhY2tncm91bmQgU3F1aXJjbGUgLyBSb3VuZGVkIFJlY3QgLS0+DQogIDxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSIxMTIiIGhlaWdodD0iMTEyIiByeD0iMjgiIHJ5PSIyOCIgZmlsbD0idXJsKCNjaHp6a0dyYWQpIiBmaWx0ZXI9InVybCgjZ2xvdykiIC8+DQoNCiAgPCEtLSBJbm5lciBTdWJ0bGUgQWNjZW50IEJvcmRlciAtLT4NCiAgPHJlY3QgeD0iOSIgeT0iOSIgd2lkdGg9IjExMCIgaGVpZ2h0PSIxMTAiIHJ4PSIyNyIgcnk9IjI3IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLW9wYWNpdHk9IjAuMyIgLz4NCg0KICA8IS0tICJDQiIgU3R5bGl6ZWQgQm9sZCBMZXR0ZXJpbmcgLS0+DQogIDx0ZXh0IHg9IjY0IiB5PSI4MyIgDQogICAgICAgIGZvbnQtZmFtaWx5PSInT3V0Zml0JywgJ1ByZXRlbmRhcmQnLCAnTW9udHNlcnJhdCcsICdBcmlhbCBCbGFjaycsIHNhbnMtc2VyaWYiIA0KICAgICAgICBmb250LXNpemU9IjYyIiANCiAgICAgICAgZm9udC13ZWlnaHQ9IjkwMCIgDQogICAgICAgIGxldHRlci1zcGFjaW5nPSItMnB4Ig0KICAgICAgICBmaWxsPSIjMDgwYzEyIiANCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSI+Q0I8L3RleHQ+DQo8L3N2Zz4NCg==">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+      user-select: none;
+    }
+
+    /* 🎨 100% 완전 투명 배경 (뒷 화면/게임/방송 화면이 100% 투과됨) */
+    html, body {
+      background: transparent !important;
+      background-color: transparent !important;
+      background-image: none !important;
+      color: #f8fafc;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* 상/하단 컨트롤 바: 마우스 호버 시에만 나타남 */
+    .controls-overlay {
+      position: fixed;
+      top: 6px;
+      left: 6px;
+      right: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(10, 15, 26, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 8px;
+      padding: 6px 12px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    body:hover .controls-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 10.5px;
+      font-weight: 700;
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+
+    .status-chip.connected {
+      background: rgba(0, 255, 163, 0.2);
+      color: #00ffa3;
+      border-color: rgba(0, 255, 163, 0.4);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    /* 🎽 독립 분리 배치 가능한 모터 유닛 카드 */
+    .suit-column {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: transparent !important;
+      cursor: grab;
+      padding: 8px 12px;
+      border-radius: 12px;
+      transition: background-color 0.15s ease;
+    }
+
+    .suit-column:hover {
+      background: rgba(14, 20, 32, 0.25) !important;
+    }
+
+    .suit-column:active {
+      cursor: grabbing;
+    }
+
+    /* 스크린샷과 동일한 청록색 정면/후면 라벨 (드래그 안내 포함) */
+    .suit-title-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .suit-title {
+      font-size: 15px;
+      font-weight: 900;
+      color: #38bdf8;
+      letter-spacing: -0.2px;
+      text-shadow: 0 0 8px #000, 0 2px 4px #000, 0 0 12px rgba(56, 189, 248, 0.7);
+    }
+
+    .drag-hint {
+      font-size: 10px;
+      color: rgba(148, 163, 184, 0.7);
+      text-shadow: 0 1px 3px #000;
+    }
+
+    .motor-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 22px);
+      grid-template-rows: repeat(5, 22px);
+      gap: 10px 10px;
+      background: transparent !important;
+    }
+
+    /* 스크린샷의 원형 도트 디자인 (배경 완전 투명, 테두리만 또렷하여 뒷 화면 100% 투과) */
+    .motor-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: transparent;
+      border: 1.5px solid rgba(56, 189, 248, 0.75);
+      box-sizing: border-box;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.85), inset 0 0 4px rgba(0, 0, 0, 0.3);
+      transition: background-color 0.08s ease, box-shadow 0.08s ease, transform 0.08s ease, border-color 0.08s ease;
+    }
+
+    .motor-dot.active {
+      transform: scale(1.15);
+    }
+
+    .btn-chip {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #cbd5e1;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 10.5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- 마우스 호버 시에만 나타나는 컴팩트 상단 바 -->
+  <div class="controls-overlay" id="controlsBar">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 12px; font-weight: 800; color: #38bdf8;">🎽 bHaptics 피격 모니터</span>
+      <div class="status-chip" id="overlayStatusChip">
+        <span class="status-dot"></span>
+        <span id="overlayStatusText">미연결</span>
+      </div>
+      <span style="font-size: 11px; color: #94a3b8;" id="hitStatusText">대기 (피격 없음)</span>
+    </div>
+    <div style="display: flex; gap: 6px; align-items: center;">
+      <span style="font-size: 10px; color: #64748b;">(정면/후면 각각 드래그하여 배치)</span>
+      <button type="button" class="btn-chip" onclick="resetPositions()" title="위치 초기화">↺ 위치 초기화</button>
+      <button type="button" class="btn-chip" onclick="testBurst('medium')" title="중타 테스트">💥 테스트</button>
+      <button type="button" class="btn-chip" onclick="stopAllHaptics()" title="정지">🛑 정지</button>
+    </div>
+  </div>
+
+  <!-- 🎽 정면 모터 유닛 (마우스 드래그로 독립 이동 가능) -->
+  <div class="suit-column" id="frontSuitColumn">
+    <div class="suit-title-bar">
+      <span class="suit-title">정면</span>
+      <span class="drag-hint">⋮⋮</span>
+    </div>
+    <div class="motor-grid" id="frontMotorGrid"></div>
+  </div>
+
+  <!-- 🎽 후면 모터 유닛 (마우스 드래그로 독립 이동 가능) -->
+  <div class="suit-column" id="backSuitColumn">
+    <div class="suit-title-bar">
+      <span class="suit-title">후면</span>
+      <span class="drag-hint">⋮⋮</span>
+    </div>
+    <div class="motor-grid" id="backMotorGrid"></div>
+  </div>
+
+  <script>
+    const frontGrid = document.getElementById('frontMotorGrid');
+    const backGrid = document.getElementById('backMotorGrid');
+    const frontCol = document.getElementById('frontSuitColumn');
+    const backCol = document.getElementById('backSuitColumn');
+
+    for (let i = 0; i < 20; i++) {
+      const fDot = document.createElement('div');
+      fDot.className = 'motor-dot';
+      fDot.id = 'ov-f-' + i;
+      frontGrid.appendChild(fDot);
+
+      const bDot = document.createElement('div');
+      bDot.className = 'motor-dot';
+      bDot.id = 'ov-b-' + i;
+      backGrid.appendChild(bDot);
+    }
+
+    // URL 파라미터로 특정 부위만 보기 (?side=front / ?side=back)
+    const urlParams = new URLSearchParams(window.location.search);
+    const sideFilter = (urlParams.get('side') || urlParams.get('type') || 'both').toLowerCase();
+
+    if (sideFilter === 'front') {
+      backCol.style.display = 'none';
+    } else if (sideFilter === 'back') {
+      frontCol.style.display = 'none';
+    }
+
+    // 각각 따로 드래그하여 배치할 수 있는 기능
+    function setupDraggable(el, storageKey, defaultLeft, defaultTop) {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          const pos = JSON.parse(saved);
+          el.style.left = pos.left + 'px';
+          el.style.top = pos.top + 'px';
+        } catch (e) {
+          el.style.left = defaultLeft + 'px';
+          el.style.top = defaultTop + 'px';
+        }
+      } else {
+        el.style.left = defaultLeft + 'px';
+        el.style.top = defaultTop + 'px';
+      }
+
+      let isDragging = false;
+      let startX, startY, origLeft, origTop;
+
+      el.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON') return;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = el.getBoundingClientRect();
+        origLeft = rect.left;
+        origTop = rect.top;
+        el.style.zIndex = 100;
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const newLeft = Math.max(0, origLeft + dx);
+        const newTop = Math.max(0, origTop + dy);
+        el.style.left = newLeft + 'px';
+        el.style.top = newTop + 'px';
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        el.style.zIndex = 10;
+        localStorage.setItem(storageKey, JSON.stringify({
+          left: parseInt(el.style.left, 10),
+          top: parseInt(el.style.top, 10)
+        }));
+      });
+    }
+
+    // 기본 위치: 정면은 좌측(30px), 후면은 우측(200px)
+    if (sideFilter === 'front') {
+      setupDraggable(frontCol, 'haptic_pos_front_only', 20, 20);
+    } else if (sideFilter === 'back') {
+      setupDraggable(backCol, 'haptic_pos_back_only', 20, 20);
+    } else {
+      setupDraggable(frontCol, 'haptic_pos_front', 30, 50);
+      setupDraggable(backCol, 'haptic_pos_back', 210, 50);
+    }
+
+    function resetPositions() {
+      localStorage.removeItem('haptic_pos_front');
+      localStorage.removeItem('haptic_pos_back');
+      localStorage.removeItem('haptic_pos_front_only');
+      localStorage.removeItem('haptic_pos_back_only');
+      frontCol.style.left = '30px';
+      frontCol.style.top = '50px';
+      backCol.style.left = '210px';
+      backCol.style.top = '50px';
+    }
+
+    async function testBurst(level) {
+      try {
+        await fetch('/api/haptic/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level })
+        });
+      } catch (e) {}
+    }
+
+    async function stopAllHaptics() {
+      try {
+        await fetch('/api/haptic/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level: 'stop' })
+        });
+      } catch (e) {}
+    }
+
+    function applyMotorDot(el, intensity, level) {
+      if (!el) return;
+      if (intensity <= 1) {
+        el.style.backgroundColor = 'transparent';
+        el.style.borderColor = 'rgba(56, 189, 248, 0.75)';
+        el.style.boxShadow = '0 0 6px rgba(0, 0, 0, 0.85), inset 0 0 4px rgba(0, 0, 0, 0.3)';
+        el.classList.remove('active');
+        return;
+      }
+
+      el.classList.add('active');
+      let color = '#38bdf8';
+      if (level === 'medium') color = '#fbbf24';
+      else if (level === 'heavy') color = '#f97316';
+      else if (level === 'critical' || level === 'faint') color = '#f43f5e';
+      else if (level === 'heartbeat') color = '#ec4899';
+
+      el.style.backgroundColor = color;
+      el.style.borderColor = color;
+      el.style.boxShadow = `0 0 ${Math.round(intensity * 0.28)}px ${color}, 0 0 8px ${color}`;
+    }
+
+    setInterval(async () => {
+      try {
+        const res = await fetch('/api/haptic/motors');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const chip = document.getElementById('overlayStatusChip');
+        const chipText = document.getElementById('overlayStatusText');
+        if (data.connected) {
+          chip.classList.add('connected');
+          chipText.innerText = '슈트 연결됨';
+        } else {
+          chip.classList.remove('connected');
+          chipText.innerText = '미연결';
+        }
+
+        const hitText = document.getElementById('hitStatusText');
+        if (data.level && data.level !== 'none') {
+          hitText.innerText = '피격 중: ' + data.level.toUpperCase();
+          hitText.style.color = '#ffd700';
+        } else {
+          hitText.innerText = '대기 (피격 없음)';
+          hitText.style.color = '#94a3b8';
+        }
+
+        if (Array.isArray(data.front)) {
+          data.front.forEach((val, i) => applyMotorDot(document.getElementById('ov-f-' + i), val, data.level));
+        }
+        if (Array.isArray(data.back)) {
+          data.back.forEach((val, i) => applyMotorDot(document.getElementById('ov-b-' + i), val, data.level));
+        }
+      } catch (e) {}
+    }, 60);
+  </script>
+</body>
+</html>
