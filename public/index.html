@@ -5895,9 +5895,26 @@
       if (!pokeBattleState.active) return;
       if (pokeBattleState.phase !== 'simultaneous_turn' && pokeBattleState.phase !== 'viewers_vote') return;
 
-      // If streamer hasn't chosen a move yet, choose first available move as default
+      // If streamer hasn't chosen a move yet, choose first valid available move (or Struggle if out of PP)
       if (!pokeBattleState.streamerAction) {
-        handleStreamerMoveSelect(0);
+        const sSlot = streamerTeam[streamerActiveIdx];
+        const allOutOfPP = sSlot && sSlot.movesPP && sSlot.movesPP.length > 0 && sSlot.movesPP.every(x => x.currentPP <= 0);
+        if (allOutOfPP) {
+          handleStreamerStruggleSelect();
+        } else if (sSlot && sSlot.pokemon && Array.isArray(sSlot.pokemon.moves)) {
+          let targetIdx = 0;
+          for (let i = 0; i < sSlot.pokemon.moves.length; i++) {
+            const m = sSlot.pokemon.moves[i];
+            const pp = sSlot.movesPP && sSlot.movesPP[i] ? sSlot.movesPP[i].currentPP : (m.pp || 15);
+            const isLocked = sSlot.choiceMove && sSlot.choiceMove.name !== m.name;
+            const isAV = sSlot.item === 'assault_vest' && m.category === '변화';
+            if (pp > 0 && !isLocked && !isAV) {
+              targetIdx = i;
+              break;
+            }
+          }
+          handleStreamerMoveSelect(targetIdx);
+        }
       }
       clearInterval(pokeBattleState.turnTimerInterval);
       finishSimultaneousPokeTurn();
@@ -6193,6 +6210,33 @@
       return Math.floor(((2 * base + 31 + 10) * 50) / 100 + 50 + 10);
     }
 
+    function calculateLevel50Stat(base) {
+      return Math.floor(((2 * (base || 80) + 31 + 10) * 50) / 100 + 5);
+    }
+
+    function clampRank(stage) {
+      return Math.max(-6, Math.min(6, stage || 0));
+    }
+
+    function getRankMultiplier(stage) {
+      const s = clampRank(stage);
+      return s >= 0 ? (2 + s) / 2 : 2 / (2 - s);
+    }
+
+    function resetSlotBattleModifiers(slot) {
+      if (!slot) return;
+      slot.choiceMove = null;
+      slot.rankAtk = 0;
+      slot.rankDef = 0;
+      slot.rankSpA = 0;
+      slot.rankSpD = 0;
+      slot.rankSpe = 0;
+      slot.toxicCounter = 0;
+      slot.destinyBond = false;
+    }
+
+    const EVIOLITE_ELIGIBLE_POKEMONS = new Set(['피카츄', '플라엣테', '침바루', '파오리', '마임맨']);
+
     function getTypeEmoji(t) {
       const map = { "불꽃": "🔥", "물": "💧", "풀": "🌿", "전기": "⚡", "얼음": "❄️", "격투": "🥊", "독": "☠️", "땅": "🏜️", "비행": "🦅", "에스퍼": "🔮", "벌레": "🐛", "바위": "🪨", "고스트": "👻", "드래곤": "🐉", "악": "🌙", "강철": "⚙️", "페어리": "✨", "노말": "⚪" };
       return map[t] || "⚪";
@@ -6400,10 +6444,10 @@
         streamerTeam[i].currentHP = streamerTeam[i].maxHP;
         streamerTeam[i].fainted = false;
         streamerTeam[i].isMega = false;
-        streamerTeam[i].choiceMove = null;
+        resetSlotBattleModifiers(streamerTeam[i]);
         streamerTeam[i].itemUsed = false;
-        streamerTeam[i].rankAtk = 0;
-        streamerTeam[i].rankSpA = 0;
+        streamerTeam[i].gemUsed = false;
+        streamerTeam[i].status = null;
 
         streamerTeam[i].movesPP = sP.moves.map(m => ({
           name: m.name,
@@ -6416,10 +6460,10 @@
         viewersTeam[i].currentHP = viewersTeam[i].maxHP;
         viewersTeam[i].fainted = false;
         viewersTeam[i].isMega = false;
-        viewersTeam[i].choiceMove = null;
+        resetSlotBattleModifiers(viewersTeam[i]);
         viewersTeam[i].itemUsed = false;
-        viewersTeam[i].rankAtk = 0;
-        viewersTeam[i].rankSpA = 0;
+        viewersTeam[i].gemUsed = false;
+        viewersTeam[i].status = null;
         viewersTeam[i].movesPP = vP.moves.map(m => ({
           name: m.name,
           currentPP: (m.pp !== undefined ? m.pp : (m.max_pp || 15)),
@@ -6452,6 +6496,9 @@
 
       pokeBattleState.active = true;
       pokeBattleState.round = 1;
+      pokeBattleState.stealthRockStreamer = false;
+      pokeBattleState.stealthRockViewers = false;
+      lastDoubleKoWinner = null;
       pokeBattleState.phase = 'streamer_turn';
       pokeBattleState.streamerAction = null;
       pokeBattleState.viewersAction = null;
@@ -7058,12 +7105,21 @@
       }
 
       const sSlot = streamerTeam[streamerActiveIdx];
+      const move = sSlot.pokemon.moves[moveIdx];
+      if (!move) return;
       const ppObj = sSlot.movesPP ? sSlot.movesPP[moveIdx] : null;
       if (ppObj && ppObj.currentPP <= 0) {
         showToast(`⚠️ [${ppObj.name}]은(는) PP가 소진되어 사용할 수 없습니다!`, '⚠️');
         return;
       }
-      const move = sSlot.pokemon.moves[moveIdx];
+      if (sSlot.choiceMove && sSlot.choiceMove.name !== move.name) {
+        showToast(`⚠️ 구애 도구 효과로 [${sSlot.choiceMove.name}]만 사용할 수 있습니다!`, '⚠️');
+        return;
+      }
+      if (sSlot.item === 'assault_vest' && move.category === '변화') {
+        showToast(`⚠️ 돌격조끼 효과로 변화 기술 [${move.name}]을(를) 사용할 수 없습니다!`, '⚠️');
+        return;
+      }
       const willMega = streamerMegaSelected && !streamerTeamHasMegaEvolved && getAvailableMegaEvolution(sSlot.pokemon, sSlot.item);
 
       pokeBattleState.streamerAction = { type: 'move', moveIdx, move, isMega: !!willMega };
@@ -8052,25 +8108,20 @@
           const moveNum = parseInt(megaMatch[1], 10);
           choiceKey = `mega_${moveNum}`;
         }
-        // Exact numbers 1~4
-        else if (/^[1-4]$/.test(clean) || /^[1-4]번$/.test(clean)) {
-          const num = parseInt(clean.replace('번', ''), 10);
+        // Plain numbers 1~4 (moves)
+        else if (/^[1-4]$/.test(clean)) {
+          const num = parseInt(clean, 10);
           choiceKey = `move_${num}`;
         }
-        // Exact numbers 5~6 (switch)
-        else if (/^[5-6]$/.test(clean)) {
-          const num = parseInt(clean, 10);
-          choiceKey = `switch_${num}`;
-        }
 
-        // Check for 3v3 switch keywords: "교체1", "1번교체", "1번", "교체2", "2번", "교체3", "3번", or Pokemon names
+        // Check for 3v3 switch keywords: "5", "6", "교체1", "1번교체", "1번", "교체2", "2번", "교체3", "3번", or Pokemon names
         if (!choiceKey && pokeBattleMode === '3v3') {
           let switchCounter = 5;
           for (let i = 0; i < 3; i++) {
-            if (i !== viewersActiveIdx && !viewersTeam[i].fainted) {
+            if (i !== viewersActiveIdx) {
               const slotNum = i + 1; // 1, 2, or 3
               const pName = viewersTeam[i].pokemon.name.toUpperCase().replace(/\s+/g, '');
-              if (
+              const isMatch = (
                 clean === String(switchCounter) ||
                 clean === `교체${slotNum}` ||
                 clean === `${slotNum}번교체` ||
@@ -8078,13 +8129,22 @@
                 clean === `${slotNum}교체` ||
                 clean === `교체${pName}` ||
                 clean === pName
-              ) {
-                choiceKey = `switch_${switchCounter}`;
+              );
+              if (isMatch) {
+                if (!viewersTeam[i].fainted && viewersTeam[i].currentHP > 0) {
+                  choiceKey = `switch_${switchCounter}`;
+                }
                 break;
               }
               switchCounter++;
             }
           }
+        }
+
+        // Fallback: if 1v1 or "1번~4번" wasn't a bench switch slot, treat as move 1~4
+        if (!choiceKey && /^[1-4]번$/.test(clean)) {
+          const num = parseInt(clean.replace('번', ''), 10);
+          choiceKey = `move_${num}`;
         }
 
         // Match move names
@@ -8105,16 +8165,14 @@
           choiceKey = 'struggle';
         }
 
-        // Reject vote if move is out of PP
-        if (choiceKey && choiceKey.startsWith('move_')) {
-          const mIdx = parseInt(choiceKey.replace('move_', ''), 10) - 1;
-          if (vSlot.movesPP && vSlot.movesPP[mIdx] && vSlot.movesPP[mIdx].currentPP <= 0) {
-            choiceKey = null;
-          }
-        }
-        if (choiceKey && choiceKey.startsWith('mega_')) {
-          const mIdx = parseInt(choiceKey.replace('mega_', ''), 10) - 1;
-          if (vSlot.movesPP && vSlot.movesPP[mIdx] && vSlot.movesPP[mIdx].currentPP <= 0) {
+        // Reject vote if move is out of PP, Choice-locked, or blocked by Assault Vest
+        if (choiceKey && (choiceKey.startsWith('move_') || choiceKey.startsWith('mega_'))) {
+          const mIdx = parseInt(choiceKey.replace(/^(?:move_|mega_)/, ''), 10) - 1;
+          const mObj = vSlot.pokemon.moves[mIdx];
+          const ppLeft = (vSlot.movesPP && vSlot.movesPP[mIdx]) ? vSlot.movesPP[mIdx].currentPP : (mObj ? (mObj.pp || 15) : 0);
+          const isLocked = vSlot.choiceMove && mObj && vSlot.choiceMove.name !== mObj.name;
+          const isAV = vSlot.item === 'assault_vest' && mObj && mObj.category === '변화';
+          if (!mObj || ppLeft <= 0 || isLocked || isAV || allViewersOutOfPP) {
             choiceKey = null;
           }
         }
@@ -8337,6 +8395,16 @@
       const sSlot = streamerTeam[streamerActiveIdx];
       const vSlot = viewersTeam[viewersActiveIdx];
 
+      function getEffectiveBattleSpeed(slot) {
+        if (!slot || !slot.pokemon) return 100;
+        let spe = calculateLevel50Stat(slot.pokemon.stats.spe);
+        spe = Math.floor(spe * getRankMultiplier(slot.rankSpe || 0));
+        if (slot.item === 'choice_scarf') spe = Math.floor(spe * 1.5);
+        if (slot.item === 'iron_ball') spe = Math.floor(spe * 0.5);
+        if (slot.status === 'par') spe = Math.floor(spe * 0.5);
+        return Math.max(1, spe);
+      }
+
       // 2. Pre-Move Mega Evolution Phase (최우선 메가진화 발동 단계)
       // 공식 룰: 교체 후, 일반 공격 기술이 나가기 전에 메가진화 연출이 우선 발생.
       // 양쪽 플레이어가 모두 메가진화를 선택했다면 메가진화 전 원래 스피드 순서대로 연출 진행.
@@ -8344,13 +8412,9 @@
       const viewersWantsMega = vAct && vAct.type === 'move' && vAct.isMega && !vSlot.isMega;
 
       if (streamerWantsMega && viewersWantsMega) {
-        // 둘 다 메가진화 시: 메가진화 전 원래 스피드 비교 (스카프/도구 보정 포함)
-        let sPreSpeed = sSlot.pokemon.stats.spe;
-        if (sSlot.item === 'choice_scarf') sPreSpeed = Math.floor(sPreSpeed * 1.5);
-        let vPreSpeed = vSlot.pokemon.stats.spe;
-        if (vSlot.item === 'choice_scarf') vPreSpeed = Math.floor(vPreSpeed * 1.5);
-
-        const streamerMegaFirst = sPreSpeed >= vPreSpeed;
+        const sPreSpeed = getEffectiveBattleSpeed(sSlot);
+        const vPreSpeed = getEffectiveBattleSpeed(vSlot);
+        const streamerMegaFirst = sPreSpeed > vPreSpeed ? true : (vPreSpeed > sPreSpeed ? false : Math.random() < 0.5);
         if (streamerMegaFirst) {
           await executeMegaEvolution('streamer');
           await battleSleep(250);
@@ -8376,8 +8440,10 @@
 
         function getMovePriority(m) {
           if (!m) return 0;
+          if (typeof m.priority === 'number') return m.priority;
+          if (m.name === '속이다') return 3;
           if (m.name === '신속') return 2;
-          if (m.name === '전광석화' || m.name === '야습' || m.name === '기습') return 1;
+          if (m.name === '전광석화' || m.name === '야습' || m.name === '기습' || m.name === '불릿펀치' || m.name === '얼음뭉치' || m.name === '그래스슬라이더') return 1;
           return 0;
         }
 
@@ -8385,14 +8451,18 @@
         const vPriority = getMovePriority(vMove);
 
         // 메가진화 완료 후의 현재 최신 스피드로 행동 순서 계산 (7세대 공식 개정 룰)
-        let sSpeed = sSlot.pokemon.stats.spe;
-        if (sSlot.item === 'choice_scarf') sSpeed = Math.floor(sSpeed * 1.5);
-        let vSpeed = vSlot.pokemon.stats.spe;
-        if (vSlot.item === 'choice_scarf') vSpeed = Math.floor(vSpeed * 1.5);
+        const sSpeed = getEffectiveBattleSpeed(sSlot);
+        const vSpeed = getEffectiveBattleSpeed(vSlot);
+
+        // 선제공격손톱 (quick_claw: 20% 확률로 동일 우선도 내 선공)
+        const sQuickClaw = sSlot.item === 'quick_claw' && Math.random() < 0.2;
+        const vQuickClaw = vSlot.item === 'quick_claw' && Math.random() < 0.2;
 
         let streamerFirst = true;
         if (sPriority > vPriority) streamerFirst = true;
         else if (vPriority > sPriority) streamerFirst = false;
+        else if (sQuickClaw && !vQuickClaw) streamerFirst = true;
+        else if (vQuickClaw && !sQuickClaw) streamerFirst = false;
         else if (sSpeed > vSpeed) streamerFirst = true;
         else if (vSpeed > sSpeed) streamerFirst = false;
         else streamerFirst = Math.random() < 0.5; // 공식 룰: 동스피드 50% 난수 결정
@@ -8460,19 +8530,7 @@
 
       setBattleDialogue(`🧬 <b>[${teamName}]</b>의 <b>${poke.name}</b>의 <b>[${stoneObj.name}]</b>이(가) 트레이너의 마음에 반응했다!<br>✨ <b>${megaForm.nameKo}</b>(으)로 <b>메가진화(MEGA EVOLUTION)</b>!`);
 
-      // Animate sprite
-      const spr = isStreamer ? document.getElementById('arenaStreamerSprite') : document.getElementById('arenaViewersSprite');
-      if (spr) {
-        spr.style.filter = 'brightness(3) drop-shadow(0 0 25px #00ffa3)';
-        spr.style.transform = 'scale(1.25)';
-        setTimeout(() => {
-          spr.src = isStreamer ? (megaForm.backSprite || megaForm.frontSprite) : megaForm.frontSprite;
-          spr.style.filter = 'none';
-          spr.style.transform = 'scale(1)';
-        }, 300);
-      }
-
-      // Update Poke stats and types
+      // Update Poke stats and types (공식 룰: 메가진화 시 HP 종족값은 변하지 않음)
       const oldMaxHP = slot.maxHP;
       poke.name = megaForm.nameKo;
       poke.types = megaForm.types;
@@ -8488,6 +8546,18 @@
       updateArenaActivePokemonUI();
       updateArenaHPBars();
 
+      // Re-apply Mega Evolution glow animation AFTER updateArenaActivePokemonUI so it isn't prematurely cleared
+      const spr = isStreamer ? document.getElementById('arenaStreamerSprite') : document.getElementById('arenaViewersSprite');
+      if (spr) {
+        spr.style.filter = 'brightness(3) drop-shadow(0 0 25px #00ffa3)';
+        spr.style.transform = 'scale(1.25)';
+        setTimeout(() => {
+          spr.src = isStreamer ? (megaForm.backSprite || megaForm.frontSprite) : megaForm.frontSprite;
+          spr.style.filter = 'none';
+          spr.style.transform = 'scale(1)';
+        }, 300);
+      }
+
       const itemBadge = document.getElementById(isStreamer ? 'arenaStreamerItemBadge' : 'arenaViewersItemBadge');
       if (itemBadge) {
         itemBadge.innerHTML = `<span class="mega-tag-badge">🧬 MEGA</span> ${stoneObj.name}`;
@@ -8498,9 +8568,11 @@
 
     async function executeSwitchAnimation(side, targetIdx) {
       if (side === 'streamer') {
-        streamerTeam[streamerActiveIdx].choiceMove = null;
+        // 공식 룰: 교체 시 랭크 변화, 구애 잠금, 길동무, 맹독 카운터 초기화
+        resetSlotBattleModifiers(streamerTeam[streamerActiveIdx]);
         streamerActiveIdx = targetIdx;
-        const sP = streamerTeam[targetIdx].pokemon;
+        const sSlot = streamerTeam[targetIdx];
+        const sP = sSlot.pokemon;
         setBattleDialogue(`👑 <b>[${getStreamerName()}]</b>은(는) <b>[${sP.name}]</b>(으)로 교체했다!`);
         updateArenaActivePokemonUI();
         renderArenaTeamBallsHUD();
@@ -8510,10 +8582,24 @@
           spr.style.transform = 'scale(0.5)';
           setTimeout(() => { spr.style.transform = 'scale(1)'; }, 200);
         }
+        await battleSleep(300);
+        // 스텔스록 (Stealth Rock) 진입 데미지 처리 (통굽부츠 제외)
+        if (pokeBattleState.stealthRockStreamer && sSlot.item !== 'heavy_duty_boots' && sSlot.currentHP > 0) {
+          let rockMult = 1.0;
+          sP.types.forEach(t => {
+            if (pokeTypeChart['바위'] && pokeTypeChart['바위'][t] !== undefined) rockMult *= pokeTypeChart['바위'][t];
+          });
+          const srDmg = Math.max(1, Math.floor((sSlot.maxHP * rockMult) / 8));
+          sSlot.currentHP = Math.max(1, sSlot.currentHP - srDmg);
+          updateArenaHPBars();
+          setBattleDialogue(`🪨 <b>${sP.name}</b>에게 날카로운 바위가 박혔다! (-${srDmg})`);
+          await battleSleep(240);
+        }
       } else {
-        viewersTeam[viewersActiveIdx].choiceMove = null;
+        resetSlotBattleModifiers(viewersTeam[viewersActiveIdx]);
         viewersActiveIdx = targetIdx;
-        const vP = viewersTeam[targetIdx].pokemon;
+        const vSlot = viewersTeam[targetIdx];
+        const vP = vSlot.pokemon;
         setBattleDialogue(`👥 <b>시청자 연합</b>은 <b>[${vP.name}]</b>(으)로 교체했다!`);
         updateArenaActivePokemonUI();
         renderArenaTeamBallsHUD();
@@ -8523,8 +8609,74 @@
           spr.style.transform = 'scale(0.5)';
           setTimeout(() => spr.style.transform = 'scale(1)', 200);
         }
+        await battleSleep(300);
+        if (pokeBattleState.stealthRockViewers && vSlot.item !== 'heavy_duty_boots' && vSlot.currentHP > 0) {
+          let rockMult = 1.0;
+          vP.types.forEach(t => {
+            if (pokeTypeChart['바위'] && pokeTypeChart['바위'][t] !== undefined) rockMult *= pokeTypeChart['바위'][t];
+          });
+          const srDmg = Math.max(1, Math.floor((vSlot.maxHP * rockMult) / 8));
+          vSlot.currentHP = Math.max(1, vSlot.currentHP - srDmg);
+          updateArenaHPBars();
+          setBattleDialogue(`🪨 <b>${vP.name}</b>에게 날카로운 바위가 박혔다! (-${srDmg})`);
+          await battleSleep(240);
+        }
       }
-      await battleSleep(300);
+    }
+
+    let lastDoubleKoWinner = null;
+
+    async function checkAndTriggerBerryHeal(slot, poke) {
+      if (!slot || slot.currentHP <= 0 || slot.itemUsed) return;
+      if (slot.item === 'sitrus_berry' && slot.currentHP <= slot.maxHP * 0.5) {
+        const heal = Math.max(1, Math.floor(slot.maxHP * 0.25));
+        slot.currentHP = Math.min(slot.maxHP, slot.currentHP + heal);
+        slot.itemUsed = true;
+        updateArenaHPBars();
+        setBattleDialogue(`🍋 <b>${poke.name}</b>은(는) 자뭉열매를 먹고 ${heal} HP를 회복했다!`);
+        await battleSleep(260);
+      } else if (slot.item === 'oran_berry' && slot.currentHP <= slot.maxHP * 0.5) {
+        const heal = Math.min(10, slot.maxHP - slot.currentHP);
+        if (heal > 0) {
+          slot.currentHP += heal;
+          slot.itemUsed = true;
+          updateArenaHPBars();
+          setBattleDialogue(`🍒 <b>${poke.name}</b>은(는) 오랭열매를 먹고 ${heal} HP를 회복했다!`);
+          await battleSleep(260);
+        }
+      }
+    }
+
+    async function checkAndTriggerWhiteHerb(slot, poke) {
+      if (!slot || slot.item !== 'white_herb' || slot.itemUsed) return;
+      if ((slot.rankAtk || 0) < 0 || (slot.rankDef || 0) < 0 || (slot.rankSpA || 0) < 0 || (slot.rankSpD || 0) < 0 || (slot.rankSpe || 0) < 0) {
+        slot.rankAtk = Math.max(0, slot.rankAtk || 0);
+        slot.rankDef = Math.max(0, slot.rankDef || 0);
+        slot.rankSpA = Math.max(0, slot.rankSpA || 0);
+        slot.rankSpD = Math.max(0, slot.rankSpD || 0);
+        slot.rankSpe = Math.max(0, slot.rankSpe || 0);
+        slot.itemUsed = true;
+        setBattleDialogue(`🌿 <b>${poke.name}</b>은(는) <b>하양허브</b>로 떨어진 능력을 원래대로 되돌렸다!`);
+        await battleSleep(250);
+      }
+    }
+
+    async function checkAndTriggerStatusBerry(slot, poke) {
+      if (!slot || !slot.status || slot.itemUsed) return;
+      const st = slot.status;
+      if (
+        slot.item === 'lum_berry' ||
+        (slot.item === 'cheri_berry' && st === 'par') ||
+        (slot.item === 'rawst_berry' && st === 'brn') ||
+        (slot.item === 'pecha_berry' && st === 'tox')
+      ) {
+        const berryObj = getItemObj(slot.item);
+        slot.status = null;
+        slot.toxicCounter = 0;
+        slot.itemUsed = true;
+        setBattleDialogue(`🍒 <b>${poke.name}</b>은(는) <b>${berryObj.name}</b>을(를) 먹고 상태 이상을 회복했다!`);
+        await battleSleep(250);
+      }
     }
 
     async function executeSingleAttack(actor, move, isMega = false) {
@@ -8542,6 +8694,16 @@
       const attackerSpr = isStreamer ? document.getElementById('arenaStreamerSprite') : document.getElementById('arenaViewersSprite');
       const defenderSpr = isStreamer ? document.getElementById('arenaViewersSprite') : document.getElementById('arenaStreamerSprite');
 
+      // Reset attacker's previous Destiny Bond when acting again
+      attackerSlot.destinyBond = false;
+
+      // Paralysis full-paralysis check (25% chance unable to move)
+      if (attackerSlot.status === 'par' && Math.random() < 0.25) {
+        setBattleDialogue(`⚡ <b>${attacker.name}</b>은(는) 몸이 저려서 움직일 수 없다!`);
+        await battleSleep(350);
+        return false;
+      }
+
       // Choice Item Lock
       if (attackerSlot.item === 'choice_band' || attackerSlot.item === 'choice_specs' || attackerSlot.item === 'choice_scarf') {
         attackerSlot.choiceMove = move;
@@ -8555,6 +8717,11 @@
         if (ppObj) {
           ppObj.currentPP = Math.max(0, ppObj.currentPP - 1);
           ppRemainingText = `<span style="font-size: 11px; color: ${ppObj.currentPP <= 2 ? '#f87171' : '#ffd700'};">(남은 PP: ${ppObj.currentPP}/${ppObj.maxPP})</span>`;
+          // 과사열매 (leppa_berry): PP 0 도달 시 10 회복
+          if (ppObj.currentPP === 0 && attackerSlot.item === 'leppa_berry' && !attackerSlot.itemUsed) {
+            ppObj.currentPP = Math.min(ppObj.maxPP, 10);
+            attackerSlot.itemUsed = true;
+          }
         }
       }
 
@@ -8567,73 +8734,223 @@
 
       await battleSleep(180);
 
-      // 2. Accuracy check (Struggle never misses)
-      const hit = isStruggle || (Math.random() * 100 <= move.acc);
+      // 2. Accuracy check (Struggle & 파동탄 never miss; apply Wide Lens / Zoom Lens / Bright Powder)
+      let effectiveAcc = move.acc || 100;
+      if (attackerSlot.item === 'wide_lens') effectiveAcc *= 1.1;
+      else if (attackerSlot.item === 'zoom_lens') effectiveAcc *= 1.2;
+      if (defenderSlot.item === 'bright_powder') effectiveAcc *= 0.9;
+
+      const hit = isStruggle || move.name === '파동탄' || (Math.random() * 100 <= effectiveAcc);
       if (!hit) {
-        // playPokeMoveAnimation triggers miss dodge and flee.wav with zero latency
         if (typeof playPokeMoveAnimation === 'function') {
           await playPokeMoveAnimation(actor, move.name, { hit: false, isCrit: false, typeMult: 1.0 });
         }
         setBattleDialogue(`💨 하지만 <b>[${attacker.name}]</b>의 공격은 빗나갔다!`);
-        await battleSleep(400);
+        await battleSleep(360);
+        // 무릎차기 (High Jump Kick) 빗나감 반동: 최대 HP의 50%
+        if (move.name === '무릎차기' && attackerSlot.currentHP > 0) {
+          const crashDmg = Math.max(1, Math.floor(attackerSlot.maxHP * 0.5));
+          attackerSlot.currentHP = Math.max(0, attackerSlot.currentHP - crashDmg);
+          updateArenaHPBars();
+          setBattleDialogue(`💥 <b>${attacker.name}</b>은(는) 기세 좋게 땅에 부딪혀 큰 데미지를 입었다! (-${crashDmg})`);
+          await battleSleep(280);
+          if (attackerSlot.currentHP <= 0) {
+            attackerSlot.fainted = true;
+            if (attackerSpr) attackerSpr.classList.add('poke-sprite-fainted');
+            renderArenaTeamBallsHUD();
+            if (window.pokeSoundEngine) window.pokeSoundEngine.playSe('faint.wav');
+            await battleSleep(320);
+            setBattleDialogue(`💀 <b>${attacker.name}</b>은(는) 쓰러졌다!`);
+            return true;
+          }
+        }
         return false;
       }
 
-      // 3. Status / Buff moves
+      // 3. Status / Buff / Recovery / Hazard moves (15종 공식 효과 구현)
       if (!isStruggle && (move.category === '변화' || move.power === 0)) {
         if (typeof playPokeMoveAnimation === 'function') {
           await playPokeMoveAnimation(actor, move.name, { hit: true, isCrit: false, typeMult: 1.0 });
         }
-        attackerSlot.rankAtk += 1;
-        attackerSlot.rankSpA += 1;
-        setBattleDialogue(`✨ <b>${attacker.name}</b>의 공격력과 특수공격력이 상승했다!`);
+        const mName = move.name;
+        if (mName === '날개쉬기' || mName === '달의불빛') {
+          const heal = Math.max(1, Math.floor(attackerSlot.maxHP * 0.5));
+          attackerSlot.currentHP = Math.min(attackerSlot.maxHP, attackerSlot.currentHP + heal);
+          updateArenaHPBars();
+          setBattleDialogue(`💚 <b>${attacker.name}</b>은(는) <b>[${mName}]</b>(으)로 체력을 회복했다! (+${heal})`);
+        } else if (mName === '칼춤') {
+          attackerSlot.rankAtk = clampRank((attackerSlot.rankAtk || 0) + 2);
+          setBattleDialogue(`⚔️ <b>${attacker.name}</b>의 공격이 크게 올라갔다! (+2랭크)`);
+        } else if (mName === '철벽') {
+          attackerSlot.rankDef = clampRank((attackerSlot.rankDef || 0) + 2);
+          setBattleDialogue(`🛡️ <b>${attacker.name}</b>의 방어가 크게 올라갔다! (+2랭크)`);
+        } else if (mName === '록커트') {
+          attackerSlot.rankSpe = clampRank((attackerSlot.rankSpe || 0) + 2);
+          setBattleDialogue(`⚡ <b>${attacker.name}</b>의 스피드가 크게 올라갔다! (+2랭크)`);
+        } else if (mName === '용의춤') {
+          attackerSlot.rankAtk = clampRank((attackerSlot.rankAtk || 0) + 1);
+          attackerSlot.rankSpe = clampRank((attackerSlot.rankSpe || 0) + 1);
+          setBattleDialogue(`🐉 <b>${attacker.name}</b>의 공격과 스피드가 올라갔다! (+1랭크)`);
+        } else if (mName === '벌크업') {
+          attackerSlot.rankAtk = clampRank((attackerSlot.rankAtk || 0) + 1);
+          attackerSlot.rankDef = clampRank((attackerSlot.rankDef || 0) + 1);
+          setBattleDialogue(`💪 <b>${attacker.name}</b>의 공격과 방어가 올라갔다! (+1랭크)`);
+        } else if (mName === '명상') {
+          attackerSlot.rankSpA = clampRank((attackerSlot.rankSpA || 0) + 1);
+          attackerSlot.rankSpD = clampRank((attackerSlot.rankSpD || 0) + 1);
+          setBattleDialogue(`🔮 <b>${attacker.name}</b>의 특수공격과 특수방어가 올라갔다! (+1랭크)`);
+        } else if (mName === '나비춤') {
+          attackerSlot.rankSpA = clampRank((attackerSlot.rankSpA || 0) + 1);
+          attackerSlot.rankSpD = clampRank((attackerSlot.rankSpD || 0) + 1);
+          attackerSlot.rankSpe = clampRank((attackerSlot.rankSpe || 0) + 1);
+          setBattleDialogue(`🦋 <b>${attacker.name}</b>의 특수공격·특수방어·스피드가 올라갔다! (+1랭크)`);
+        } else if (mName === '껍질깨기') {
+          attackerSlot.rankAtk = clampRank((attackerSlot.rankAtk || 0) + 2);
+          attackerSlot.rankSpA = clampRank((attackerSlot.rankSpA || 0) + 2);
+          attackerSlot.rankSpe = clampRank((attackerSlot.rankSpe || 0) + 2);
+          attackerSlot.rankDef = clampRank((attackerSlot.rankDef || 0) - 1);
+          attackerSlot.rankSpD = clampRank((attackerSlot.rankSpD || 0) - 1);
+          setBattleDialogue(`🐚 <b>${attacker.name}</b>은(는) 껍질을 깨서 방어/특방을 깎고 공격·특공·스피드를 크게 올렸다!`);
+          await checkAndTriggerWhiteHerb(attackerSlot, attacker);
+        } else if (mName === '도깨비불') {
+          if (defender.types.includes('불꽃') || defenderSlot.status) {
+            setBattleDialogue(`💨 하지만 <b>${defender.name}</b>에게는 효과가 없었다!`);
+          } else {
+            defenderSlot.status = 'brn';
+            setBattleDialogue(`🔥 <b>${defender.name}</b>은(는) 화상을 입었다! (물리 공격력 반감 & 매 턴 피해)`);
+            await checkAndTriggerStatusBerry(defenderSlot, defender);
+          }
+        } else if (mName === '전기자석파') {
+          if (defender.types.includes('전기') || defender.types.includes('땅') || defenderSlot.status) {
+            setBattleDialogue(`💨 하지만 <b>${defender.name}</b>에게는 효과가 없었다!`);
+          } else {
+            defenderSlot.status = 'par';
+            setBattleDialogue(`⚡ <b>${defender.name}</b>은(는) 마비되어 스피드가 떨어지고 몸이 저리게 되었다!`);
+            await checkAndTriggerStatusBerry(defenderSlot, defender);
+          }
+        } else if (mName === '맹독') {
+          if (defender.types.includes('독') || defender.types.includes('강철') || defenderSlot.status) {
+            setBattleDialogue(`💨 하지만 <b>${defender.name}</b>에게는 효과가 없었다!`);
+          } else {
+            defenderSlot.status = 'tox';
+            defenderSlot.toxicCounter = 1;
+            setBattleDialogue(`☠️ <b>${defender.name}</b>은(는) 맹독에 걸렸다!`);
+            await checkAndTriggerStatusBerry(defenderSlot, defender);
+          }
+        } else if (mName === '스텔스록') {
+          if (isStreamer) pokeBattleState.stealthRockViewers = true;
+          else pokeBattleState.stealthRockStreamer = true;
+          setBattleDialogue(`🪨 상대 진영 주변에 날카로운 바위가 떠다니기 시작했다!`);
+        } else if (mName === '길동무') {
+          attackerSlot.destinyBond = true;
+          setBattleDialogue(`👻 <b>${attacker.name}</b>은(는) 상대를 길동무로 삼으려 하고 있다!`);
+        } else {
+          attackerSlot.rankAtk = clampRank((attackerSlot.rankAtk || 0) + 1);
+          attackerSlot.rankSpA = clampRank((attackerSlot.rankSpA || 0) + 1);
+          setBattleDialogue(`✨ <b>${attacker.name}</b>의 공격력과 특수공격력이 상승했다!`);
+        }
         await battleSleep(320);
         return false;
       }
 
-      // 4. Damage calculation
+      // 4. Damage calculation (공식 Lv.50 실능치 및 랭크·급소 규칙 적용)
       const isSpecial = move.category === '특수';
-      let atkStat = isSpecial ? attacker.stats.spa : attacker.stats.atk;
-      let defStat = isSpecial ? defender.stats.spd : defender.stats.def;
+      const isBodyPress = move.name === '바디프레스';
+      const isPsyshock = move.name === '사이코쇼크';
+
+      // Critical Hit
+      const highCritMoves = new Set(['스톤에지', '섀도크루', '리프블레이드', '깜짝베기', '크로스촙']);
+      let critStage = (attackerSlot.item === 'scope_lens' ? 1 : 0) + (highCritMoves.has(move.name) ? 1 : 0);
+      const critChance = critStage >= 2 ? 0.5 : (critStage === 1 ? 0.125 : 0.0625);
+      const isCrit = !isStruggle && (Math.random() < critChance);
+      const critMult = isCrit ? 1.5 : 1.0;
+
+      // Base -> Lv.50 Real Stat
+      const rawAtkBase = isBodyPress ? attacker.stats.def : (isSpecial ? attacker.stats.spa : attacker.stats.atk);
+      const rawDefBase = (isSpecial && !isPsyshock) ? defender.stats.spd : defender.stats.def;
+      let atkStat = calculateLevel50Stat(rawAtkBase);
+      let defStat = calculateLevel50Stat(rawDefBase);
+
+      // Stat Ranks (공식 급소 룰: 급소 시 공격 측의 랭크 하락 무시, 방어 측의 랭크 상승 무시)
+      let atkRank = isBodyPress ? (attackerSlot.rankDef || 0) : (isSpecial ? (attackerSlot.rankSpA || 0) : (attackerSlot.rankAtk || 0));
+      let defRank = (isSpecial && !isPsyshock) ? (defenderSlot.rankSpD || 0) : (defenderSlot.rankDef || 0);
+      if (isCrit) {
+        if (atkRank < 0) atkRank = 0;
+        if (defRank > 0) defRank = 0;
+      }
+      atkStat = Math.floor(atkStat * getRankMultiplier(atkRank));
+      defStat = Math.floor(defStat * getRankMultiplier(defRank));
 
       // Item offensive buffs
       if (!isSpecial && attackerSlot.item === 'choice_band') atkStat = Math.floor(atkStat * 1.5);
       if (isSpecial && attackerSlot.item === 'choice_specs') atkStat = Math.floor(atkStat * 1.5);
-      if (attackerSlot.rankAtk > 0) atkStat = Math.floor(atkStat * (1 + 0.5 * attackerSlot.rankAtk));
+      if (attackerSlot.item === 'light_ball' && attacker.name.includes('피카츄')) atkStat = Math.floor(atkStat * 2.0);
 
       // Item defensive buffs
-      if (isSpecial && defenderSlot.item === 'assault_vest') defStat = Math.floor(defStat * 1.5);
-      if (defenderSlot.item === 'eviolite' && defender.name === '피카츄') {
+      if (isSpecial && !isPsyshock && defenderSlot.item === 'assault_vest') defStat = Math.floor(defStat * 1.5);
+      if (defenderSlot.item === 'eviolite' && EVIOLITE_ELIGIBLE_POKEMONS.has(defender.name)) {
         defStat = Math.floor(defStat * 1.5);
       }
+
+      // 화상(Burn) 상태 시 물리 기술 데미지 0.5배
+      const burnMult = (!isSpecial && !isStruggle && attackerSlot.status === 'brn') ? 0.5 : 1.0;
 
       // STAB (자속 보정)
       const stab = (!isStruggle && attacker.types.includes(move.type)) ? 1.5 : 1.0;
 
-      // Type Effectiveness (Struggle deals neutral damage)
+      // Type Effectiveness (Struggle deals neutral damage; 검은철구 착용 시 비행 타입도 땅 기술 피격)
       let typeMult = 1.0;
       if (!isStruggle) {
         defender.types.forEach(defType => {
-          if (pokeTypeChart[move.type] && pokeTypeChart[move.type][defType] !== undefined) {
+          if (move.type === '땅' && defType === '비행' && defenderSlot.item === 'iron_ball') {
+            typeMult *= 1.0;
+          } else if (pokeTypeChart[move.type] && pokeTypeChart[move.type][defType] !== undefined) {
             typeMult *= pokeTypeChart[move.type][defType];
           }
         });
       }
 
-      // Item: Expert Belt
-      if (!isStruggle && attackerSlot.item === 'expert_belt' && typeMult >= 2.0) {
-        typeMult *= 1.2;
+      // 🎈 풍선 (Air Balloon): 땅 타입 무효화 (검은철구가 아닐 때)
+      if (!isStruggle && move.type === '땅' && defenderSlot.item === 'air_balloon') {
+        typeMult = 0;
+        setBattleDialogue(`🎈 <b>${defender.name}</b>은(는) <b>풍선</b>으로 공중에 떠 있어서 땅 타입 공격이 닿지 않았다!`);
       }
 
-      // Critical Hit
-      const critChance = attackerSlot.item === 'scope_lens' ? 0.125 : 0.0625;
-      const isCrit = Math.random() < critChance;
-      const critMult = isCrit ? 1.5 : 1.0;
-      if (isCrit) pokeBattleState.stats.crits++;
+      if (isCrit && typeMult > 0) pokeBattleState.stats.crits++;
       if (typeMult >= 2.0) pokeBattleState.stats.superEffective++;
 
-      // Life Orb bonus
-      let itemDmgMult = attackerSlot.item === 'life_orb' ? 1.3 : 1.0;
+      // Item Damage Modifiers
+      let itemDmgMult = 1.0;
+      if (attackerSlot.item === 'life_orb') itemDmgMult *= 1.3;
+      if (!isStruggle && attackerSlot.item === 'expert_belt' && typeMult >= 2.0) itemDmgMult *= 1.2;
+      if (!isSpecial && attackerSlot.item === 'muscle_band') itemDmgMult *= 1.1;
+      if (isSpecial && attackerSlot.item === 'wise_glasses') itemDmgMult *= 1.1;
+      if (attackerSlot.item === 'punching_glove' && move.name.includes('펀치')) itemDmgMult *= 1.1;
+
+      // 속성 강화 도구 & 플레이트 (1.2배)
+      const typeBoostItems = {
+        '노말': ['silk_scarf'],
+        '불꽃': ['charcoal', 'flame_plate'],
+        '물': ['mystic_water', 'splash_plate'],
+        '전기': ['magnet', 'zap_plate'],
+        '풀': ['miracle_seed', 'meadow_plate'],
+        '얼음': ['never_melt_ice', 'icicle_plate'],
+        '격투': ['black_belt', 'fist_plate'],
+        '독': ['poison_barb', 'toxic_plate'],
+        '땅': ['soft_sand', 'earth_plate'],
+        '비행': ['sharp_beak', 'sky_plate'],
+        '에스퍼': ['twisted_spoon', 'mind_plate'],
+        '벌레': ['silver_powder', 'insect_plate'],
+        '바위': ['hard_stone', 'stone_plate'],
+        '고스트': ['spell_tag', 'spooky_plate'],
+        '드래곤': ['dragon_fang', 'draco_plate'],
+        '악': ['black_glasses', 'dread_plate'],
+        '강철': ['metal_coat', 'iron_plate'],
+        '페어리': ['fairy_feather', 'pixie_plate']
+      };
+      if (!isStruggle && attackerSlot.item && typeBoostItems[move.type] && typeBoostItems[move.type].includes(attackerSlot.item)) {
+        itemDmgMult *= 1.2;
+      }
 
       // 💎 18종 속성별 주얼 (Type Gem): 해당 속성 기술 1회 한정 1.3배 부스트 후 소모
       const typeToGemMap = {
@@ -8643,22 +8960,33 @@
         '바위': 'rock_gem', '고스트': 'ghost_gem', '드래곤': 'dragon_gem', '악': 'dark_gem',
         '강철': 'steel_gem', '페어리': 'fairy_gem'
       };
-      if (!isStruggle && attackerSlot.item && attackerSlot.item === typeToGemMap[move.type] && !attackerSlot.gemUsed) {
+      if (!isStruggle && typeMult > 0 && attackerSlot.item && attackerSlot.item === typeToGemMap[move.type] && !attackerSlot.gemUsed) {
         itemDmgMult *= 1.3;
         attackerSlot.gemUsed = true;
         attackerSlot.item = null;
         setBattleDialogue(`💎 <b>${attacker.name}</b>의 <b>주얼</b>이 빛을 발하며 위력이 상승했다!`);
       }
 
-      // 🎈 풍선 (Air Balloon): 땅 타입 무효화
-      if (!isStruggle && move.type === '땅' && defenderSlot.item === 'air_balloon') {
-        typeMult = 0;
-        setBattleDialogue(`🎈 <b>${defender.name}</b>은(는) <b>풍선</b>으로 공중에 떠 있어서 땅 타입 공격이 닿지 않았다!`);
+      // 🍒 반감 열매 (Type-Resist Berries: 약점 피격 또는 노말 피격 시 데미지 0.5배 1회)
+      const resistBerryMap = {
+        '불꽃': 'occa_berry', '물': 'passho_berry', '전기': 'wacan_berry', '풀': 'rindo_berry',
+        '얼음': 'yache_berry', '격투': 'chople_berry', '독': 'kebia_berry', '땅': 'shuca_berry',
+        '비행': 'coba_berry', '에스퍼': 'payapa_berry', '벌레': 'tanga_berry', '바위': 'charti_berry',
+        '고스트': 'kasib_berry', '드래곤': 'haban_berry', '악': 'colbur_berry', '강철': 'babiri_berry',
+        '페어리': 'roseli_berry'
+      };
+      if (!isStruggle && !defenderSlot.itemUsed) {
+        if ((typeMult >= 2.0 && defenderSlot.item === resistBerryMap[move.type]) || (move.type === '노말' && typeMult > 0 && defenderSlot.item === 'chilan_berry')) {
+          const bObj = getItemObj(defenderSlot.item);
+          itemDmgMult *= 0.5;
+          defenderSlot.itemUsed = true;
+          setBattleDialogue(`🍒 <b>${defender.name}</b>의 <b>${bObj.name}</b>이(가) 발동하여 기술의 위력을 약화시켰다!`);
+        }
       }
 
       const randomFactor = (Math.floor(Math.random() * 16) + 85) / 100;
       let baseDmg = Math.floor((((2 * 50 / 5 + 2) * move.power * (atkStat / Math.max(1, defStat))) / 50) + 2);
-      let finalDamage = Math.max(1, Math.floor(baseDmg * stab * typeMult * critMult * itemDmgMult * randomFactor));
+      let finalDamage = Math.max(1, Math.floor(baseDmg * stab * typeMult * critMult * itemDmgMult * burnMult * randomFactor));
       if (typeMult === 0) finalDamage = 0;
 
       // Play 2D Dot Battle Move Animation
@@ -8689,19 +9017,22 @@
         setBattleDialogue(`🎗️ <b>[${defender.name}]</b>은(는) <b>기합의머리띠</b>로 버텼다! (HP 1 남음)`);
       }
 
+      const dealtDamage = prevHP - remainingHP;
       defenderSlot.currentHP = remainingHP;
       if (isStreamer) {
-        pokeBattleState.stats.streamerDamage += (prevHP - remainingHP);
+        pokeBattleState.stats.streamerDamage += dealtDamage;
       } else {
-        pokeBattleState.stats.viewersDamage += (prevHP - remainingHP);
+        pokeBattleState.stats.viewersDamage += dealtDamage;
         // 🎽 HAPTIC TRIGGER: 스트리머 피격 시 슈트에 데미지 비례 충격 전송!
-        const damagePercent = ((prevHP - remainingHP) / defenderSlot.maxHP) * 100.0;
-        const currentHpPct = (remainingHP / defenderSlot.maxHP) * 100.0;
-        triggerHapticDamage(damagePercent, currentHpPct, isCrit);
+        if (dealtDamage > 0) {
+          const damagePercent = (dealtDamage / defenderSlot.maxHP) * 100.0;
+          const currentHpPct = (remainingHP / defenderSlot.maxHP) * 100.0;
+          triggerHapticDamage(damagePercent, currentHpPct, isCrit);
+        }
       }
 
       // Defender hit visual animation
-      if (defenderSpr) {
+      if (defenderSpr && finalDamage > 0) {
         defenderSpr.classList.add('poke-sprite-defender');
         setTimeout(() => defenderSpr.classList.remove('poke-sprite-defender'), 500);
       }
@@ -8710,13 +9041,49 @@
 
       // Dialogue feedback
       let feedback = `💥 <b>${finalDamage}</b>의 데미지를 입혔다!`;
-      if (isCrit) feedback += ` <b style="color: #f59e0b;">(급소에 맞았다!)</b>`;
+      if (isCrit && finalDamage > 0) feedback += ` <b style="color: #f59e0b;">(급소에 맞았다!)</b>`;
       if (typeMult >= 2.0) feedback += ` <b style="color: #ef4444;">(효과가 굉장했다!)</b>`;
       else if (typeMult > 0 && typeMult < 1.0) feedback += ` <b style="color: #64748b;">(효과가 별로인 듯하다...)</b>`;
       else if (typeMult === 0) feedback += ` <b style="color: #64748b;">(효과가 전혀 없다...)</b>`;
 
       setBattleDialogue(feedback);
       await battleSleep(320);
+
+      // 대폭발 (Self-Destruct / Explosion): 사용 즉시 사용자 기절 (자폭 측이 먼저 기절 처리)
+      const isSelfDestruct = move.name === '대폭발';
+      if (isSelfDestruct && attackerSlot.currentHP > 0) {
+        attackerSlot.currentHP = 0;
+        updateArenaHPBars();
+        setBattleDialogue(`💥 <b>${attacker.name}</b>은(는) 대폭발의 여파로 모든 체력을 소진했다!`);
+        await battleSleep(240);
+      }
+
+      // 흡수 기술 (기가드레인, 드레인펀치): 입힌 데미지의 50% 회복 (큰뿌리 착용 시 65%)
+      if (dealtDamage > 0 && (move.name === '기가드레인' || move.name === '드레인펀치') && attackerSlot.currentHP > 0) {
+        const drainMult = attackerSlot.item === 'big_root' ? 0.65 : 0.5;
+        const drainHeal = Math.max(1, Math.floor(dealtDamage * drainMult));
+        attackerSlot.currentHP = Math.min(attackerSlot.maxHP, attackerSlot.currentHP + drainHeal);
+        updateArenaHPBars();
+        setBattleDialogue(`🌿 <b>${defender.name}</b>에게서 체력을 흡수했다! (+${drainHeal})`);
+        await battleSleep(240);
+      }
+
+      // 인파이트 (Close Combat): 명중 시 자신의 방어/특수방어 -1랭크 하락
+      if (dealtDamage > 0 && move.name === '인파이트' && attackerSlot.currentHP > 0) {
+        attackerSlot.rankDef = clampRank((attackerSlot.rankDef || 0) - 1);
+        attackerSlot.rankSpD = clampRank((attackerSlot.rankSpD || 0) - 1);
+        await checkAndTriggerWhiteHerb(attackerSlot, attacker);
+      }
+
+      // 일반 반동기 (플레어드라이브, 브레이브버드, 우드해머, 볼트태클, 이판사판태클): 입힌 데미지의 1/3 반동
+      const thirdRecoilMoves = new Set(['플레어드라이브', '브레이브버드', '우드해머', '볼트태클', '이판사판태클']);
+      if (dealtDamage > 0 && thirdRecoilMoves.has(move.name) && attackerSlot.currentHP > 0) {
+        const moveRecoil = Math.max(1, Math.floor(dealtDamage / 3));
+        attackerSlot.currentHP = Math.max(0, attackerSlot.currentHP - moveRecoil);
+        updateArenaHPBars();
+        setBattleDialogue(`💥 <b>${attacker.name}</b>은(는) 기술의 반동으로 데미지를 입었다! (-${moveRecoil})`);
+        await battleSleep(240);
+      }
 
       // Struggle Recoil Damage (25% max HP)
       if (isStruggle && attackerSlot.currentHP > 0) {
@@ -8732,9 +9099,18 @@
         await battleSleep(240);
       }
 
-      // Post-hit Item Effects
-      // 1. Life Orb recoil (HP 10%)
-      if (attackerSlot.item === 'life_orb' && attackerSlot.currentHP > 0) {
+      // Post-hit Item Effects (공식 룰: 데미지가 실제로 들어갔을 때만 발동!)
+      // 1. 조개껍질방울 (Shell Bell: 입힌 데미지의 1/8 회복)
+      if (dealtDamage > 0 && attackerSlot.item === 'shell_bell' && attackerSlot.currentHP > 0 && attackerSlot.currentHP < attackerSlot.maxHP) {
+        const sbHeal = Math.max(1, Math.floor(dealtDamage / 8));
+        attackerSlot.currentHP = Math.min(attackerSlot.maxHP, attackerSlot.currentHP + sbHeal);
+        updateArenaHPBars();
+        setBattleDialogue(`🔔 <b>${attacker.name}</b>은(는) 조개껍질방울로 체력을 조금 회복했다! (+${sbHeal})`);
+        await battleSleep(220);
+      }
+
+      // 2. Life Orb recoil (HP 10%, 데미지를 입혔을 때만 발동)
+      if (finalDamage > 0 && attackerSlot.item === 'life_orb' && attackerSlot.currentHP > 0) {
         const recoil = Math.max(1, Math.floor(attackerSlot.maxHP * 0.1));
         attackerSlot.currentHP = Math.max(0, attackerSlot.currentHP - recoil);
         updateArenaHPBars();
@@ -8742,8 +9118,9 @@
         await battleSleep(240);
       }
 
-      // 2. Rocky Helmet (울퉁불퉁멧 1/6 recoil on physical)
-      if (!isSpecial && defenderSlot.item === 'rocky_helmet' && attackerSlot.currentHP > 0) {
+      // 3. Rocky Helmet (울퉁불퉁멧: 물리 접촉 데미지를 입었을 때만 1/6 반사, 펀치글러브 착용 시 비접촉)
+      const isPunchingGloveBlocked = attackerSlot.item === 'punching_glove' && move.name.includes('펀치');
+      if (finalDamage > 0 && !isSpecial && !isPunchingGloveBlocked && defenderSlot.item === 'rocky_helmet' && attackerSlot.currentHP > 0) {
         const recoil = Math.max(1, Math.floor(attackerSlot.maxHP / 6));
         attackerSlot.currentHP = Math.max(0, attackerSlot.currentHP - recoil);
         updateArenaHPBars();
@@ -8751,26 +9128,20 @@
         await battleSleep(240);
       }
 
-      // 3. Weakness Policy (약점보험 +2 Atk/+2 SpA on super-effective)
-      if (typeMult >= 2.0 && defenderSlot.item === 'weakness_policy' && !defenderSlot.itemUsed && defenderSlot.currentHP > 0) {
+      // 4. Weakness Policy (약점보험 +2 Atk/+2 SpA on super-effective hit)
+      if (finalDamage > 0 && typeMult >= 2.0 && defenderSlot.item === 'weakness_policy' && !defenderSlot.itemUsed && defenderSlot.currentHP > 0) {
         defenderSlot.itemUsed = true;
-        defenderSlot.rankAtk += 2;
-        defenderSlot.rankSpA += 2;
+        defenderSlot.rankAtk = clampRank((defenderSlot.rankAtk || 0) + 2);
+        defenderSlot.rankSpA = clampRank((defenderSlot.rankSpA || 0) + 2);
         setBattleDialogue(`🛡️ <b>${defender.name}</b>은(는) 약점보험이 발동하여 공격/특수공격이 크게 상승했다!`);
         await battleSleep(300);
       }
 
-      // 4. Sitrus Berry Heal
-      if (defenderSlot.item === 'sitrus_berry' && !defenderSlot.itemUsed && defenderSlot.currentHP > 0 && defenderSlot.currentHP <= defenderSlot.maxHP * 0.5) {
-        const heal = Math.max(1, Math.round(defenderSlot.maxHP * 0.25));
-        defenderSlot.currentHP = Math.min(defenderSlot.maxHP, defenderSlot.currentHP + heal);
-        defenderSlot.itemUsed = true;
-        updateArenaHPBars();
-        setBattleDialogue(`🍋 <b>${defender.name}</b>은(는) 자뭉열매를 먹고 ${heal} HP를 회복했다!`);
-        await battleSleep(300);
-      }
+      // 5. Sitrus / Oran Berry Heal (방어자 및 반동 입은 공격자 모두 체크)
+      await checkAndTriggerBerryHeal(defenderSlot, defender);
+      await checkAndTriggerBerryHeal(attackerSlot, attacker);
 
-      // Faint Check
+      // Faint Check & Official Double KO Tiebreaker
       let defDied = false;
       let atkDied = false;
 
@@ -8785,6 +9156,13 @@
         }
         await battleSleep(350);
         setBattleDialogue(`💀 <b>${defender.name}</b>은(는) 쓰러졌다!`);
+
+        // 길동무 (Destiny Bond) 발동: 피격자가 길동무 상태였다면 공격자도 함께 기절
+        if (defenderSlot.destinyBond && attackerSlot.currentHP > 0) {
+          attackerSlot.currentHP = 0;
+          await battleSleep(250);
+          setBattleDialogue(`👻 <b>${defender.name}</b>은(는) 상대 <b>${attacker.name}</b>을(를) 길동무로 데려갔다!`);
+        }
       }
 
       if (attackerSlot.currentHP <= 0) {
@@ -8797,31 +9175,89 @@
           window.pokeSoundEngine.playSe('faint.wav');
         }
         await battleSleep(350);
-        setBattleDialogue(`💀 <b>${attacker.name}</b>은(는) 반동으로 쓰러졌다!`);
+        setBattleDialogue(`💀 <b>${attacker.name}</b>은(는) 쓰러졌다!`);
+      }
+
+      if (defDied && atkDied) {
+        // 공식 룰: 대폭발(자폭기)은 사용자가 먼저 기절하므로 방어 측 승리, 반동/생명의구슬/울퉁불퉁멧은 피격자가 먼저 기절하므로 공격 측 승리
+        if (isSelfDestruct || defenderSlot.destinyBond) {
+          lastDoubleKoWinner = isStreamer ? 'viewers' : 'streamer';
+        } else {
+          lastDoubleKoWinner = isStreamer ? 'streamer' : 'viewers';
+        }
       }
 
       return defDied || atkDied;
     }
 
     async function handleRoundEndEffects() {
-      // Leftovers & Black Sludge recovery
-      const sSlot = streamerTeam[streamerActiveIdx];
-      const vSlot = viewersTeam[viewersActiveIdx];
+      const sides = [
+        { side: 'streamer', slot: streamerTeam[streamerActiveIdx], spr: document.getElementById('arenaStreamerSprite') },
+        { side: 'viewers', slot: viewersTeam[viewersActiveIdx], spr: document.getElementById('arenaViewersSprite') }
+      ];
 
-      if (sSlot.item === 'leftovers' && sSlot.currentHP > 0 && sSlot.currentHP < sSlot.maxHP) {
-        const heal = Math.max(1, Math.round(sSlot.maxHP / 16));
-        sSlot.currentHP = Math.min(sSlot.maxHP, sSlot.currentHP + heal);
-        updateArenaHPBars();
-        setBattleDialogue(`🍎 <b>${sSlot.pokemon.name}</b>은(는) 먹어남은음식으로 체력을 조금 회복했다!`);
-        await battleSleep(240);
+      for (const entry of sides) {
+        const slot = entry.slot;
+        if (!slot || slot.fainted || slot.currentHP <= 0) continue;
+        const p = slot.pokemon;
+
+        // 1. Leftovers & Black Sludge
+        if (slot.item === 'leftovers' && slot.currentHP < slot.maxHP) {
+          const heal = Math.max(1, Math.round(slot.maxHP / 16));
+          slot.currentHP = Math.min(slot.maxHP, slot.currentHP + heal);
+          updateArenaHPBars();
+          setBattleDialogue(`🍎 <b>${p.name}</b>은(는) 먹다남은음식으로 체력을 조금 회복했다! (+${heal})`);
+          await battleSleep(240);
+        } else if (slot.item === 'black_sludge') {
+          if (p.types.includes('독')) {
+            if (slot.currentHP < slot.maxHP) {
+              const heal = Math.max(1, Math.round(slot.maxHP / 16));
+              slot.currentHP = Math.min(slot.maxHP, slot.currentHP + heal);
+              updateArenaHPBars();
+              setBattleDialogue(`🟣 <b>${p.name}</b>은(는) 검은진흙으로 체력을 조금 회복했다! (+${heal})`);
+              await battleSleep(240);
+            }
+          } else {
+            const dmg = Math.max(1, Math.round(slot.maxHP / 8));
+            slot.currentHP = Math.max(0, slot.currentHP - dmg);
+            updateArenaHPBars();
+            setBattleDialogue(`🟣 <b>${p.name}</b>은(는) 검은진흙 때문에 데미지를 입었다! (-${dmg})`);
+            await battleSleep(240);
+          }
+        }
+
+        // 2. Burn (화상: 최대 HP의 1/16) & Bad Poison (맹독: N/16 누적)
+        if (slot.currentHP > 0 && slot.status === 'brn') {
+          const brnDmg = Math.max(1, Math.floor(slot.maxHP / 16));
+          slot.currentHP = Math.max(0, slot.currentHP - brnDmg);
+          updateArenaHPBars();
+          setBattleDialogue(`🔥 <b>${p.name}</b>은(는) 화상으로 인한 데미지를 입었다! (-${brnDmg})`);
+          await battleSleep(240);
+        } else if (slot.currentHP > 0 && slot.status === 'tox') {
+          const count = Math.min(15, slot.toxicCounter || 1);
+          const toxDmg = Math.max(1, Math.floor((slot.maxHP * count) / 16));
+          slot.toxicCounter = count + 1;
+          slot.currentHP = Math.max(0, slot.currentHP - toxDmg);
+          updateArenaHPBars();
+          setBattleDialogue(`☠️ <b>${p.name}</b>은(는) 독으로 인한 데미지를 입었다! (-${toxDmg})`);
+          await battleSleep(240);
+        }
+
+        await checkAndTriggerBerryHeal(slot, p);
+
+        if (slot.currentHP <= 0) {
+          slot.currentHP = 0;
+          slot.fainted = true;
+          if (entry.spr) entry.spr.classList.add('poke-sprite-fainted');
+          renderArenaTeamBallsHUD();
+          if (window.pokeSoundEngine) window.pokeSoundEngine.playSe('faint.wav');
+          await battleSleep(320);
+          setBattleDialogue(`💀 <b>${p.name}</b>은(는) 쓰러졌다!`);
+        }
       }
 
-      if (vSlot.item === 'leftovers' && vSlot.currentHP > 0 && vSlot.currentHP < vSlot.maxHP) {
-        const heal = Math.max(1, Math.round(vSlot.maxHP / 16));
-        vSlot.currentHP = Math.min(vSlot.maxHP, vSlot.currentHP + heal);
-        updateArenaHPBars();
-        setBattleDialogue(`🍎 <b>${vSlot.pokemon.name}</b>은(는) 먹어남은음식으로 체력을 조금 회복했다!`);
-        await battleSleep(240);
+      if (await checkAndResolveTurnFaints()) {
+        return;
       }
 
       pokeBattleState.round++;
@@ -8851,8 +9287,8 @@
 
       // Check wipeout conditions
       if (sAlive.length === 0 && vAlive.length === 0) {
-        // Double faint with no bench Pokemon remaining
-        finishPokeBattle('viewers');
+        // Double faint with no bench Pokemon remaining: use official recoil/self-KO winner rule
+        finishPokeBattle(lastDoubleKoWinner || 'streamer');
         return true;
       }
       if (sAlive.length === 0) {

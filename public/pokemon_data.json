@@ -2471,7 +2471,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/208.png",
@@ -2715,7 +2716,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/227.png",
@@ -3324,7 +3326,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/306.png",
@@ -3858,7 +3861,8 @@
           "acc": 100,
           "desc": "그림자를 뻗어 반드시 선공하는 기습 공격.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         },
         {
           "name": "길동무",
@@ -6522,7 +6526,8 @@
           "acc": 100,
           "desc": "그림자를 뻗어 반드시 선공하는 기습 공격.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         },
         {
           "name": "길동무",
@@ -7987,7 +7992,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/681.png",
@@ -8836,7 +8842,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/707.png",
@@ -10223,7 +10230,8 @@
           "acc": 100,
           "desc": "그림자를 뻗어 반드시 선공하는 기습 공격.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         },
         {
           "name": "길동무",
@@ -11750,7 +11758,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/968.png",
@@ -12237,7 +12246,8 @@
           "acc": 100,
           "desc": "총알 같은 속도로 주먹을 날리는 선공기.",
           "pp": 30,
-          "max_pp": 30
+          "max_pp": 30,
+          "priority": 1
         }
       ],
       "sprite_front": "pokemon/1018.png",
@@ -17818,7 +17828,7 @@
       ],
       "frontSprite": "https://pkmnchamps.github.io/images/sprites/forms/charizard-mega-x.png",
       "backSprite": "/pokemon/mega_back_charizard-mega-x.png",
-      "requiredStoneId": "charizardite-x"
+      "requiredStoneId": "charizardite_x"
     },
     {
       "basePokeId": 6,
@@ -17851,7 +17861,7 @@
       ],
       "frontSprite": "https://pkmnchamps.github.io/images/sprites/forms/charizard-mega-y.png",
       "backSprite": "/pokemon/mega_back_charizard-mega-y.png",
-      "requiredStoneId": "charizardite-y"
+      "requiredStoneId": "charizardite_y"
     },
     {
       "basePokeId": 9,
@@ -17981,7 +17991,7 @@
       ],
       "frontSprite": "https://pkmnchamps.github.io/images/sprites/forms/raichu-mega-x.png",
       "backSprite": "pokemon/26_back.png",
-      "requiredStoneId": "raichunite-x"
+      "requiredStoneId": "raichunite_x"
     },
     {
       "basePokeId": 26,
@@ -18013,7 +18023,7 @@
       ],
       "frontSprite": "https://pkmnchamps.github.io/images/sprites/forms/raichu-mega-y.png",
       "backSprite": "pokemon/26_back.png",
-      "requiredStoneId": "raichunite-y"
+      "requiredStoneId": "raichunite_y"
     },
     {
       "basePokeId": 36,
