@@ -33,17 +33,22 @@
     '10만마력': 'high-horsepower',
     '10만볼트': 'thunderbolt',
     '고드름떨구기': 'icicle-crash',
+    '그래스슬라이더': 'grassy-glide',
     '기가드레인': 'giga-drain',
     '기습': 'sucker-punch',
     '길동무': 'destiny-bond',
     '깨물어부수기': 'crunch',
+    '껍질깨기': 'shell-smash',
     '나비춤': 'quiver-dance',
     '날개쉬기': 'roost',
     '냉동빔': 'ice-beam',
+    '냉동펀치': 'ice-punch',
     '누르기': 'body-slam',
     '눈보라': 'blizzard',
     '달의불빛': 'moonlight',
+    '대검돌격': 'glaive-rush',
     '대지의힘': 'earth-power',
+    '대폭발': 'explosion',
     '더스트슈트': 'gunk-shot',
     '도깨비불': 'will-o-wisp',
     '독찌르기': 'poison-jab',
@@ -55,11 +60,14 @@
     '매지컬샤인': 'dazzling-gleam',
     '맹독': 'toxic',
     '명상': 'calm-mind',
+    '무릎차기': 'high-jump-kick',
     '문포스': 'moonblast',
+    '바디프레스': 'body-press',
     '번개': 'thunder',
     '벌레의야단법석': 'bug-buzz',
     '벌크업': 'bulk-up',
     '볼트태클': 'volt-tackle',
+    '불꽃펀치': 'fire-punch',
     '불대문자': 'fire-blast',
     '불릿펀치': 'bullet-punch',
     '브레이브버드': 'brave-bird',
@@ -68,6 +76,7 @@
     '사이코키네시스': 'psybeam',
     '섀도볼': 'shadow-ball',
     '섀도크루': 'shadow-claw',
+    '속이다': 'fake-out',
     '솔라빔': 'solar-beam',
     '스텔스록': 'stealth-rock',
     '스톤샤워': 'rock-slide',
@@ -84,9 +93,11 @@
     '오물폭탄': 'sludge-bomb',
     '용의춤': 'dragon-dance',
     '용의파동': 'dragon-pulse',
+    '우드해머': 'wood-hammer',
     '유턴': 'u-turn',
     '이판사판태클': 'double-edge',
     '인파이트': 'close-combat',
+    '저격': 'snipe-shot',
     '전기자석파': 'thunder-wave',
     '지진': 'earthquake',
     '철벽': 'iron-defense',
@@ -97,11 +108,13 @@
     '파도타기': 'surf',
     '파동탄': 'aura-sphere',
     '파워젬': 'power-gem',
+    '파워휩': 'power-whip',
     '폭포오르기': 'waterfall',
     '플레어드라이브': 'flare-blitz',
     '하이드로펌프': 'hydro-pump',
     '하이퍼보이스': 'hyper-voice',
     '화염방사': 'flamethrower',
+    '화염볼': 'pyro-ball',
     '발버둥': 'flail',
     '몸통박치기': 'tackle',
     '할퀴기': 'scratch',
@@ -152,7 +165,6 @@
   // RAM Caches
   var animJsonCache = new Map();
   var imgCache = new Map();
-  var audioBufferCache = new Map();
 
   var audioCtx = null;
   function getAudioContext() {
@@ -391,10 +403,6 @@
     var waveBaseScale = (canvas.height / 850) * 0.85;
 
     for (var f = 0; f < totalFrames; f++) {
-            if (f === 10 && hitResult && hitResult.hit) {
-        triggerHitImpact(targetSpr, hitResult, { shake: 22, flash: false }, canvas, ctx);
-        if (animHitFeedback) animHitFeedback.soundTriggered = true;
-      }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       var t = f / totalFrames;
 
@@ -568,7 +576,7 @@
 
     var totalFrames = 30;
     for (var f = 0; f < totalFrames; f++) {
-            if (f === 10 && hitResult && hitResult.hit) {
+      if (f === 10 && hitResult && hitResult.hit) {
         triggerHitImpact(targetSpr, hitResult, { shake: 22, flash: false }, canvas, ctx);
         if (animHitFeedback) animHitFeedback.soundTriggered = true;
       }
@@ -625,6 +633,9 @@
   async function playNdsParticleAnim(canvas, ctx, userX, userY, targetX, targetY, isStreamer, moveName, hitResult, animHitFeedback) {
     var slug = POKE_MOVE_MAP[moveName] || 'tackle';
     var rawData = await loadMoveJson(slug);
+    if (!rawData && slug !== 'tackle') {
+      rawData = await loadMoveJson('tackle');
+    }
 
     var userSpr = document.getElementById(isStreamer ? 'arenaStreamerSprite' : 'arenaViewersSprite');
     var targetSpr = document.getElementById(isStreamer ? 'arenaViewersSprite' : 'arenaStreamerSprite');
@@ -866,20 +877,17 @@
     try {
       // 1. SURF: Genuine EBDX Tsunami Wave
       if (m === '파도타기' || m === '탁류') {
-        if (window.pokeSoundEngine) window.pokeSoundEngine.playSe('PRSFX- Muddy Water.wav');
         await playEbdxSurf(canvas, ctx, userX, userY, targetX, targetY, isStreamer, hitResult, animHitFeedback);
       }
       // 2. PSYCHIC: Genuine EBDX Cosmic Space Distortion & Levitation
       else if (m === '사이코키네시스' || m === '사이코쇼크') {
-        if (window.pokeSoundEngine) window.pokeSoundEngine.playSe('PRSFX- Psychic.wav');
         await playEbdxPsychic(canvas, ctx, targetX, targetY, isStreamer, hitResult, animHitFeedback);
       }
       // 3. EARTHQUAKE: Genuine EBDX Scene-Wide Fissure & Magnitude 24 Rumble
       else if (m === '지진') {
-        if (window.pokeSoundEngine) window.pokeSoundEngine.playSe('PRSFX- Earthquake.wav');
         await playEbdxEarthquake(canvas, ctx, userX, userY, targetX, targetY, isStreamer, hitResult, animHitFeedback);
       }
-      // 4. ALL OTHER 71 MOVES: Genuine Gen 4/5 NDS Multi-Frame Particle Sequences + EBDX Atmosphere
+      // 4. ALL OTHER MOVES: Genuine Gen 4/5 NDS Multi-Frame Particle Sequences + EBDX Atmosphere
       else {
         await playNdsParticleAnim(canvas, ctx, userX, userY, targetX, targetY, isStreamer, m, hitResult, animHitFeedback);
       }

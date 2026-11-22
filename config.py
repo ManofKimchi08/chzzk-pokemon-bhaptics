@@ -11,6 +11,54 @@ else:
 
 CONFIG_FILE = os.path.join(APP_DIR, "config.json")
 
+VALID_POSITIONS = ("All", "VestFront", "VestBack")
+VALID_SINK_KINDS = ("bhaptics", "websocket")
+
+
+def clamp_int(val: Any, lo: int, hi: int, default: int) -> int:
+    try:
+        return max(lo, min(hi, int(val)))
+    except (ValueError, TypeError):
+        return default
+
+
+def clamp_float(val: Any, lo: float, hi: float, default: float) -> float:
+    try:
+        return max(lo, min(hi, float(val)))
+    except (ValueError, TypeError):
+        return default
+
+
+def normalize_motor_count(val: Any, default: int = 32) -> int:
+    try:
+        return 40 if int(val) == 40 else 32
+    except (ValueError, TypeError):
+        return default
+
+
+def normalize_position(val: Any, default: str = "All") -> str:
+    s = str(val).strip() if val is not None else default
+    return s if s in VALID_POSITIONS else default
+
+
+def normalize_sink_kind(val: Any, default: str = "bhaptics") -> str:
+    s = str(val).strip().lower() if val is not None else default
+    return s if s in VALID_SINK_KINDS else default
+
+
+def parse_detail_row(raw: Any, defaults: Optional['HapticDetailRow'] = None) -> 'HapticDetailRow':
+    """Parse only allowed HapticDetailRow fields with range clamping."""
+    base = defaults or HapticDetailRow()
+    if not isinstance(raw, dict):
+        return HapticDetailRow(base.intensity, base.duration, base.hit_count, base.position)
+    return HapticDetailRow(
+        intensity=clamp_int(raw.get("intensity", base.intensity), 0, 100, base.intensity),
+        duration=round(clamp_float(raw.get("duration", base.duration), 0.05, 5.0, base.duration), 3),
+        hit_count=clamp_int(raw.get("hit_count", base.hit_count), 1, 5, base.hit_count),
+        position=normalize_position(raw.get("position", base.position), base.position),
+    )
+
+
 @dataclass
 class SinkConfig:
     kind: str = "bhaptics"          # "bhaptics" (공식 SDK 기본) | "websocket" (레거시 옵션)
@@ -107,27 +155,32 @@ class AppConfig:
 
             # "sink" 우선 로드, 이전 형식의 "haptic"도 호환 로드
             sink_data = data.get("sink") or data.get("haptic") or {}
+            if not isinstance(sink_data, dict):
+                sink_data = {}
             sink = SinkConfig(
-                kind=str(sink_data.get("kind", "bhaptics")),
-                app_id=str(sink_data.get("app_id", "")),
-                api_key=str(sink_data.get("api_key", "")),
-                motor_count=int(sink_data.get("motor_count", 32)),
-                front_gain=float(sink_data.get("front_gain", 1.0)),
-                back_gain=float(sink_data.get("back_gain", 1.0)),
-                ws_url=str(sink_data.get("ws_url", "ws://127.0.0.1:15888/v2/feedbacks")),
-                master_intensity=int(sink_data.get("master_intensity", 100))
+                kind=normalize_sink_kind(sink_data.get("kind", "bhaptics")),
+                app_id=str(sink_data.get("app_id", "") or "").strip(),
+                api_key=str(sink_data.get("api_key", "") or "").strip(),
+                motor_count=normalize_motor_count(sink_data.get("motor_count", 32)),
+                front_gain=clamp_float(sink_data.get("front_gain", 1.0), 0.0, 3.0, 1.0),
+                back_gain=clamp_float(sink_data.get("back_gain", 1.0), 0.0, 3.0, 1.0),
+                ws_url=str(sink_data.get("ws_url", "ws://127.0.0.1:15888/v2/feedbacks") or "ws://127.0.0.1:15888/v2/feedbacks").strip(),
+                master_intensity=clamp_int(sink_data.get("master_intensity", 100), 0, 100, 100)
             )
 
-            # Details
+            # Details (허용 필드만 안전 추출 및 범위 클램핑)
+            details_defaults = DetailedHapticConfig()
             details_data = data.get("details", {})
+            if not isinstance(details_data, dict):
+                details_data = {}
             details_kwargs = {}
             for k in ["light", "medium", "heavy", "critical", "faint", "heartbeat"]:
                 if k in details_data and isinstance(details_data[k], dict):
-                    details_kwargs[k] = HapticDetailRow(**details_data[k])
+                    details_kwargs[k] = parse_detail_row(details_data[k], getattr(details_defaults, k))
 
             for k in ["front_balance", "back_balance"]:
                 if k in details_data:
-                    details_kwargs[k] = int(details_data[k])
+                    details_kwargs[k] = clamp_int(details_data[k], 0, 100, getattr(details_defaults, k))
 
             details = DetailedHapticConfig(**details_kwargs)
             return cls(

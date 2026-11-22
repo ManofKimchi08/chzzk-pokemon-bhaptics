@@ -29,3 +29,7 @@ venv/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Runtime user config & overlay positions (contain API credentials / local state)
+config.json
+overlay_positions.json

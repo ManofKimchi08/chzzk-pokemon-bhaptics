@@ -4,7 +4,12 @@ import json
 import threading
 import tkinter as tk
 
-POS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'overlay_positions.json')
+if getattr(sys, 'frozen', False):
+    _APP_DIR = os.path.dirname(sys.executable)
+else:
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+POS_FILE = os.path.join(_APP_DIR, 'overlay_positions.json')
 
 def load_positions():
     try:
@@ -140,52 +145,82 @@ class DesktopHapticOverlay:
         self.front_win = None
         self.back_win = None
         self.is_running = False
+        self._lock = threading.Lock()
+        self._front_def_pos = (20, 120)
+        self._back_def_pos = (320, 120)
 
     def start(self, side='both'):
-        if self.is_running and self.root:
-            try:
-                if self.front_win and side in ('both', 'front'):
+        with self._lock:
+            if self.is_running and self.root:
+                try:
+                    self.root.after(0, lambda s=side: self._ensure_windows_on_tk_thread(s))
+                    return True
+                except Exception:
+                    pass
+            self.is_running = True
+            t = threading.Thread(target=lambda: self._run(side), daemon=True, name="DesktopOverlayTk")
+            t.start()
+            return True
+
+    def _handle_child_close(self, closed_side):
+        if closed_side == 'front':
+            self.front_win = None
+        elif closed_side == 'back':
+            self.back_win = None
+        if not self.front_win and not self.back_win:
+            self._shutdown_on_tk_thread()
+
+    def _ensure_windows_on_tk_thread(self, side='both'):
+        if not self.root:
+            return
+        if side in ('both', 'front'):
+            if self.front_win:
+                try:
                     self.front_win.win.deiconify()
                     self.front_win.win.lift()
-                if self.back_win and side in ('both', 'back'):
+                except Exception:
+                    self.front_win = None
+            if not self.front_win:
+                fx, fy = self._front_def_pos
+                self.front_win = MotorUnitWindow(self.root, '정면', 'front', self.haptic_engine, fx, fy, self._handle_child_close)
+
+        if side in ('both', 'back'):
+            if self.back_win:
+                try:
                     self.back_win.win.deiconify()
                     self.back_win.win.lift()
-                return True
-            except:
+                except Exception:
+                    self.back_win = None
+            if not self.back_win:
+                bx, by = self._back_def_pos
+                self.back_win = MotorUnitWindow(self.root, '후면', 'back', self.haptic_engine, bx, by, self._handle_child_close)
+
+    def _shutdown_on_tk_thread(self):
+        with self._lock:
+            self.is_running = False
+            root = self.root
+        if root:
+            try:
+                root.quit()
+                root.destroy()
+            except Exception:
                 pass
-        t = threading.Thread(target=lambda: self._run(side), daemon=True)
-        t.start()
-        return True
+        with self._lock:
+            self.root = None
+            self.front_win = None
+            self.back_win = None
 
     def _run(self, side='both'):
-        self.is_running = True
         try:
             self.root = tk.Tk()
             self.root.withdraw()  # Hide master root window
-            
+
             screen_w = self.root.winfo_screenwidth()
-            screen_h = self.root.winfo_screenheight()
-            
-            def handle_child_close(closed_side):
-                if closed_side == 'front':
-                    self.front_win = None
-                elif closed_side == 'back':
-                    self.back_win = None
-                if not self.front_win and not self.back_win:
-                    self.stop()
+            self._front_def_pos = (max(20, screen_w // 2 - 300), 120)
+            self._back_def_pos = (min(screen_w - 180, screen_w // 2 + 150), 120)
 
-            # Front default position: left side
-            front_def_x = max(20, screen_w // 2 - 300)
-            front_def_y = 120
-            # Back default position: right side
-            back_def_x = min(screen_w - 180, screen_w // 2 + 150)
-            back_def_y = 120
+            self._ensure_windows_on_tk_thread(side)
 
-            if side in ('both', 'front'):
-                self.front_win = MotorUnitWindow(self.root, '정면', 'front', self.haptic_engine, front_def_x, front_def_y, handle_child_close)
-            if side in ('both', 'back'):
-                self.back_win = MotorUnitWindow(self.root, '후면', 'back', self.haptic_engine, back_def_x, back_def_y, handle_child_close)
-                
             def update_loop():
                 if not self.is_running or not self.root:
                     return
@@ -200,25 +235,24 @@ class DesktopHapticOverlay:
                     pass
                 if self.is_running and self.root:
                     self.root.after(60, update_loop)
-                    
+
             self.root.after(100, update_loop)
             self.root.mainloop()
         except Exception:
             pass
         finally:
-            self.is_running = False
-            self.root = None
-            self.front_win = None
-            self.back_win = None
+            with self._lock:
+                self.is_running = False
+                self.root = None
+                self.front_win = None
+                self.back_win = None
 
     def stop(self):
-        self.is_running = False
-        if self.root:
+        with self._lock:
+            self.is_running = False
+            root = self.root
+        if root:
             try:
-                self.root.quit()
-                self.root.destroy()
-            except:
+                root.after(0, self._shutdown_on_tk_thread)
+            except Exception:
                 pass
-        self.root = None
-        self.front_win = None
-        self.back_win = None

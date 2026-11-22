@@ -76,6 +76,7 @@ class HapticEngine:
         self.last_duration_ms: int = 0
         self.last_level: str = "none"
         self.last_damage_percent: float = 0.0
+        self._burst_generation: int = 0
         self._state_lock = threading.Lock()
 
         # 백그라운드 이벤트 루프 스레드 시작
@@ -97,8 +98,14 @@ class HapticEngine:
         self._thread.start()
         ready_event.wait(timeout=3.0)
 
+    def _set_connection_state(self, connected: bool, status_msg: str) -> None:
+        with self._state_lock:
+            self._connected = connected
+            self._status_msg = status_msg
+
     def is_connected(self) -> bool:
-        return self._connected
+        with self._state_lock:
+            return self._connected
 
     def get_player_status(self) -> Dict[str, Any]:
         """bHaptics Player 설치 및 구동 여부 확인"""
@@ -141,8 +148,9 @@ class HapticEngine:
             return False
 
     def get_status(self) -> Dict[str, Any]:
+        # IPC/Async 조회는 락 밖에서 수행하여 모터 폴링 및 버스트가 블로킹되지 않도록 함
+        p_status = self.get_player_status()
         with self._state_lock:
-            p_status = self.get_player_status()
             return {
                 "connected": self._connected,
                 "status_msg": self._status_msg,
@@ -162,127 +170,138 @@ class HapticEngine:
 
     def connect(self, app_id: Optional[str] = None, api_key: Optional[str] = None, kind: Optional[str] = None, motor_count: Optional[int] = None, front_gain: Optional[float] = None, back_gain: Optional[float] = None) -> Tuple[bool, str]:
         """설정된 출력 방식(공식 SDK or 레거시 WebSocket)으로 연결 초기화"""
-        if kind is not None:
-            self.sink_cfg.kind = kind
-        if app_id is not None:
-            self.sink_cfg.app_id = app_id.strip()
-        if api_key is not None:
-            self.sink_cfg.api_key = api_key.strip()
-        if motor_count is not None:
-            self.sink_cfg.motor_count = int(motor_count)
-        if front_gain is not None:
-            self.sink_cfg.front_gain = float(front_gain)
-        if back_gain is not None:
-            self.sink_cfg.back_gain = float(back_gain)
+        with self._state_lock:
+            if kind is not None:
+                self.sink_cfg.kind = kind
+            if app_id is not None:
+                self.sink_cfg.app_id = app_id.strip()
+            if api_key is not None:
+                self.sink_cfg.api_key = api_key.strip()
+            if motor_count is not None:
+                self.sink_cfg.motor_count = int(motor_count)
+            if front_gain is not None:
+                self.sink_cfg.front_gain = float(front_gain)
+            if back_gain is not None:
+                self.sink_cfg.back_gain = float(back_gain)
 
-        target_kind = self.sink_cfg.kind.lower()
+            target_kind = self.sink_cfg.kind.lower()
+            target_app_id = self.sink_cfg.app_id
+            target_api_key = self.sink_cfg.api_key
+            ws_url = self.sink_cfg.ws_url or "ws://127.0.0.1:15888/v2/feedbacks"
+            motor_count_val = self.sink_cfg.motor_count
 
         # 1. 공식 SDK 모드
         if target_kind == "bhaptics":
             if not HAS_BHAPTICS_SDK:
-                self._connected = False
-                self._status_msg = "bhaptics-python 패키지가 설치되지 않았습니다."
-                return False, self._status_msg
-
-            target_app_id = self.sink_cfg.app_id
-            target_api_key = self.sink_cfg.api_key
+                msg = "bhaptics-python 패키지가 설치되지 않았습니다."
+                self._set_connection_state(False, msg)
+                return False, msg
 
             if not target_app_id or not target_api_key:
-                self._connected = False
-                self._status_msg = "App ID와 API Key가 비어 있습니다. bHaptics Developer Portal에서 발급받은 App ID와 API Key를 입력해주세요."
-                print(f"[Haptics] {self._status_msg}")
-                return False, self._status_msg
+                msg = "App ID와 API Key가 비어 있습니다. bHaptics Developer Portal에서 발급받은 App ID와 API Key를 입력해주세요."
+                self._set_connection_state(False, msg)
+                print(f"[Haptics] {msg}")
+                return False, msg
 
             async def _async_connect_sdk():
                 try:
                     # Player 실행 여부 우선 확인
                     is_running = await bhaptics_python.is_bhaptics_player_running()
                     if not is_running:
-                        self._connected = False
-                        self._status_msg = "⚠️ PC에서 bHaptics Player가 실행되지 않았습니다. bHaptics Player를 먼저 실행해주세요."
-                        print(f"[Haptics] {self._status_msg}")
-                        return False, self._status_msg
+                        msg = "⚠️ PC에서 bHaptics Player가 실행되지 않았습니다. bHaptics Player를 먼저 실행해주세요."
+                        self._set_connection_state(False, msg)
+                        print(f"[Haptics] {msg}")
+                        return False, msg
 
                     print(f"[Haptics] bHaptics 공식 SDK 초기화 시도: App ID={target_app_id}")
                     init_res = await bhaptics_python.registry_and_initialize(target_app_id, target_api_key, "")
                     if not init_res:
-                        self._connected = False
-                        self._status_msg = "bHaptics SDK 초기화 실패: Player 연결 거부 또는 유효하지 않은 App ID/API Key입니다."
-                        print(f"[Haptics] {self._status_msg}")
-                        return False, self._status_msg
+                        msg = "bHaptics SDK 초기화 실패: Player 연결 거부 또는 유효하지 않은 App ID/API Key입니다."
+                        self._set_connection_state(False, msg)
+                        print(f"[Haptics] {msg}")
+                        return False, msg
 
-                    self._connected = True
-                    self._status_msg = f"bHaptics 공식 SDK 연결 성공 (모터: {self.sink_cfg.motor_count}점)"
-                    print(f"[Haptics] {self._status_msg}")
-                    return True, self._status_msg
+                    msg = f"bHaptics 공식 SDK 연결 성공 (모터: {motor_count_val}점)"
+                    self._set_connection_state(True, msg)
+                    print(f"[Haptics] {msg}")
+                    return True, msg
                 except Exception as e:
-                    self._connected = False
-                    self._status_msg = f"bHaptics SDK 초기화 실패: {str(e)}"
-                    print(f"[Haptics] {self._status_msg}")
-                    return False, self._status_msg
+                    msg = f"bHaptics SDK 초기화 실패: {str(e)}"
+                    self._set_connection_state(False, msg)
+                    print(f"[Haptics] {msg}")
+                    return False, msg
 
             future = asyncio.run_coroutine_threadsafe(_async_connect_sdk(), self._loop)
             try:
                 return future.result(timeout=6.0)
             except Exception as e:
-                self._connected = False
-                self._status_msg = f"연결 시간 초과 또는 실패: {e}"
-                return False, self._status_msg
+                msg = f"연결 시간 초과 또는 실패: {e}"
+                self._set_connection_state(False, msg)
+                return False, msg
 
         # 2. 레거시 WebSocket 모드
         elif target_kind == "websocket":
             if not HAS_WEBSOCKETS:
-                self._connected = False
-                self._status_msg = "websockets 패키지가 설치되지 않았습니다."
-                return False, self._status_msg
-
-            ws_url = self.sink_cfg.ws_url or "ws://127.0.0.1:15888/v2/feedbacks"
+                msg = "websockets 패키지가 설치되지 않았습니다."
+                self._set_connection_state(False, msg)
+                return False, msg
 
             async def _async_connect_ws():
                 try:
                     if self._ws:
                         await self._ws.close()
                     self._ws = await websockets.connect(ws_url, close_timeout=2)
-                    self._connected = True
-                    self._status_msg = f"레거시 WebSocket 연결 성공 ({ws_url})"
-                    print(f"[Haptics] {self._status_msg}")
-                    return True, self._status_msg
+                    msg = f"레거시 WebSocket 연결 성공 ({ws_url})"
+                    self._set_connection_state(True, msg)
+                    print(f"[Haptics] {msg}")
+                    return True, msg
                 except Exception as e:
                     # 15881 포트 시도
                     fallback_url = "ws://127.0.0.1:15881/v2/feedbacks"
                     try:
                         self._ws = await websockets.connect(fallback_url, close_timeout=2)
-                        self._connected = True
-                        self._status_msg = f"레거시 WebSocket 연결 성공 ({fallback_url})"
-                        print(f"[Haptics] {self._status_msg}")
-                        return True, self._status_msg
-                    except Exception as e2:
-                        self._connected = False
-                        self._status_msg = f"레거시 WebSocket 연결 실패 ({ws_url}): {e}"
-                        print(f"[Haptics] {self._status_msg}")
-                        return False, self._status_msg
+                        msg = f"레거시 WebSocket 연결 성공 ({fallback_url})"
+                        self._set_connection_state(True, msg)
+                        print(f"[Haptics] {msg}")
+                        return True, msg
+                    except Exception:
+                        msg = f"레거시 WebSocket 연결 실패 ({ws_url}): {e}"
+                        self._set_connection_state(False, msg)
+                        print(f"[Haptics] {msg}")
+                        return False, msg
 
             future = asyncio.run_coroutine_threadsafe(_async_connect_ws(), self._loop)
             try:
                 return future.result(timeout=5.0)
             except Exception as e:
-                self._connected = False
-                self._status_msg = f"WebSocket 연결 오류: {e}"
-                return False, self._status_msg
+                msg = f"WebSocket 연결 오류: {e}"
+                self._set_connection_state(False, msg)
+                return False, msg
 
         else:
-            self._connected = False
-            self._status_msg = f"알 수 없는 출력 방식입니다: {target_kind}"
-            return False, self._status_msg
+            msg = f"알 수 없는 출력 방식입니다: {target_kind}"
+            self._set_connection_state(False, msg)
+            return False, msg
 
     def disconnect(self) -> None:
-        """연결 종료 및 모든 진동 정지 (stop_all & close 호출)"""
-        self._connected = False
-        self._status_msg = "연결 종료됨"
-        self.stop_all()
+        """연결 종료 및 모든 진동 정지 (stop_all & close 완료 대기)"""
+        with self._state_lock:
+            self._connected = False
+            self._status_msg = "연결 종료됨"
+            self._burst_generation += 1
+            self.last_front_motors = [0] * 20
+            self.last_back_motors = [0] * 20
+            self.last_trigger_time = 0.0
+            self.last_level = "none"
 
         async def _async_close():
             if HAS_BHAPTICS_SDK:
+                try:
+                    res = bhaptics_python.stop_all()
+                    if asyncio.iscoroutine(res) or isinstance(res, asyncio.Future):
+                        await res
+                except Exception:
+                    pass
                 try:
                     res = bhaptics_python.close()
                     if asyncio.iscoroutine(res) or isinstance(res, asyncio.Future):
@@ -291,20 +310,31 @@ class HapticEngine:
                     pass
             if self._ws:
                 try:
+                    turn_off = {"Submit": [{"Type": "turnOff", "Key": "pokemon_hit"}]}
+                    await self._ws.send(json.dumps(turn_off))
+                except Exception:
+                    pass
+                try:
                     await self._ws.close()
                 except Exception:
                     pass
                 self._ws = None
 
         if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(_async_close(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(_async_close(), self._loop)
+            try:
+                future.result(timeout=1.5)
+            except Exception:
+                pass
 
     def stop_all(self) -> None:
-        """모든 햅틱 진동 정지"""
+        """모든 햅틱 진동 정지 (진행 중 버스트 즉시 무효화)"""
         with self._state_lock:
+            self._burst_generation += 1
             self.last_front_motors = [0] * 20
             self.last_back_motors = [0] * 20
             self.last_trigger_time = 0.0
+            self.last_level = "none"
 
         async def _async_stop():
             if HAS_BHAPTICS_SDK:
@@ -395,26 +425,32 @@ class HapticEngine:
     def trigger_pattern_burst(self, level: str, detail_row: HapticDetailRow, position_mode: Optional[str] = None, damage_pct: float = 0.0) -> None:
         """타격 횟수(Hit Count) 버스트 비동기 실행 및 출력 전송"""
         pos = position_mode if position_mode is not None else getattr(detail_row, "position", "All")
-        hit_count = max(1, min(5, detail_row.hit_count))
-        duration_ms = int(detail_row.duration * 1000)
-        intensity_val = int(detail_row.intensity)
+        hit_count = max(1, min(5, int(detail_row.hit_count)))
+        duration_ms = int(float(detail_row.duration) * 1000)
+        intensity_val = max(0, min(100, int(detail_row.intensity)))
+
+        with self._state_lock:
+            burst_gen = self._burst_generation
 
         async def _async_burst_worker():
             for burst_idx in range(hit_count):
-                front_20, back_20 = self._generate_motor_matrix(level, intensity_val, pos)
-                motors_sdk, f20_scaled, b20_scaled = self._create_sdk_motor_array(front_20, back_20)
-
-                # UI 시각화 상태 기록 (게인/밸런스/마스터 세기 반영값)
                 with self._state_lock:
+                    if burst_gen != self._burst_generation:
+                        return
+                    front_20, back_20 = self._generate_motor_matrix(level, intensity_val, pos)
+                    motors_sdk, f20_scaled, b20_scaled = self._create_sdk_motor_array(front_20, back_20)
+                    # UI 시각화 상태 기록 (게인/밸런스/마스터 세기 반영값)
                     self.last_front_motors = f20_scaled
                     self.last_back_motors = b20_scaled
                     self.last_trigger_time = time.time()
                     self.last_duration_ms = duration_ms
                     self.last_level = level
                     self.last_damage_percent = damage_pct
+                    connected_snapshot = self._connected
+                    sink_kind = self.sink_cfg.kind
 
                 # 1. 공식 SDK 출력
-                if self.sink_cfg.kind == "bhaptics" and HAS_BHAPTICS_SDK and self._connected:
+                if sink_kind == "bhaptics" and HAS_BHAPTICS_SDK and connected_snapshot:
                     try:
                         # position = 0 (TactSuit Pro / Vest)
                         res = bhaptics_python.play_dot(0, duration_ms, motors_sdk)
@@ -422,11 +458,12 @@ class HapticEngine:
                             await res
                     except Exception as e:
                         err_msg = f"공식 SDK play_dot 오류: {e}"
-                        self._status_msg = err_msg
+                        with self._state_lock:
+                            self._status_msg = err_msg
                         print(f"[Haptics] {err_msg}")
 
                 # 2. 레거시 WebSocket 출력
-                elif self.sink_cfg.kind == "websocket" and self._connected and self._ws:
+                elif sink_kind == "websocket" and connected_snapshot and self._ws:
                     try:
                         dots = [{"Index": i, "Intensity": v} for i, v in enumerate(motors_sdk) if v > 0]
                         payload = {
@@ -446,11 +483,12 @@ class HapticEngine:
                         await self._ws.send(json.dumps(payload))
                     except Exception as e:
                         err_msg = f"레거시 WebSocket 전송 실패: {e}"
-                        self._status_msg = err_msg
+                        with self._state_lock:
+                            self._status_msg = err_msg
                         print(f"[Haptics] {err_msg}")
 
                 if burst_idx < hit_count - 1:
-                    await asyncio.sleep(detail_row.duration * 0.6 + 0.05)
+                    await asyncio.sleep(float(detail_row.duration) * 0.6 + 0.05)
 
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(_async_burst_worker(), self._loop)

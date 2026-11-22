@@ -297,10 +297,18 @@
       localStorage.removeItem('haptic_pos_back');
       localStorage.removeItem('haptic_pos_front_only');
       localStorage.removeItem('haptic_pos_back_only');
-      frontCol.style.left = '30px';
-      frontCol.style.top = '50px';
-      backCol.style.left = '210px';
-      backCol.style.top = '50px';
+      if (sideFilter === 'front') {
+        frontCol.style.left = '20px';
+        frontCol.style.top = '20px';
+      } else if (sideFilter === 'back') {
+        backCol.style.left = '20px';
+        backCol.style.top = '20px';
+      } else {
+        frontCol.style.left = '30px';
+        frontCol.style.top = '50px';
+        backCol.style.left = '210px';
+        backCol.style.top = '50px';
+      }
     }
 
     async function testBurst(level) {
@@ -345,7 +353,10 @@
       el.style.boxShadow = `0 0 ${Math.round(intensity * 0.28)}px ${color}, 0 0 8px ${color}`;
     }
 
+    let isMotorsFetching = false;
     setInterval(async () => {
+      if (isMotorsFetching) return;
+      isMotorsFetching = true;
       try {
         const res = await fetch('/api/haptic/motors');
         if (!res.ok) return;
@@ -376,8 +387,11 @@
         if (Array.isArray(data.back)) {
           data.back.forEach((val, i) => applyMotorDot(document.getElementById('ov-b-' + i), val, data.level));
         }
-      } catch (e) {}
-    }, 60);
+      } catch (e) {
+      } finally {
+        isMotorsFetching = false;
+      }
+    }, 80);
   </script>
 </body>
 </html>

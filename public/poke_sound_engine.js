@@ -65,6 +65,7 @@ class PokeSoundEngine {
     // Dedicated Pre-buffered BGM Audio Elements (zero-delay crossfading)
     this.bgmElements = {};
     this.activeBgm = null;
+    this._stoppingAudio = null;
     this._initBgmElements();
 
     this._setupAutoplayUnlock();
@@ -139,7 +140,7 @@ class PokeSoundEngine {
       this._preloadAllSe();
 
       for (const el of Object.values(this.bgmElements)) {
-        if (el && el.load) {
+        if (el && el.paused && el.readyState === 0 && el.load) {
           try { el.load(); } catch (e) {}
         }
       }
@@ -201,6 +202,28 @@ class PokeSoundEngine {
     if (!newAudio) return;
 
     const prevAudio = this.activeBgm;
+    if (this.fadeTimer) {
+      clearInterval(this.fadeTimer);
+      this.fadeTimer = null;
+    }
+    if (this._stoppingAudio && this._stoppingAudio !== newAudio && this._stoppingAudio !== prevAudio) {
+      try {
+        this._stoppingAudio.pause();
+        this._stoppingAudio.volume = 0;
+        this._stoppingAudio.currentTime = 0;
+      } catch (e) {}
+      this._stoppingAudio = null;
+    }
+    for (const el of Object.values(this.bgmElements)) {
+      if (el && el !== newAudio && el !== prevAudio && !el.paused) {
+        try {
+          el.pause();
+          el.volume = 0;
+          el.currentTime = 0;
+        } catch (e) {}
+      }
+    }
+
     this.currentTrack = track;
     this.activeBgm = newAudio;
 
@@ -216,8 +239,6 @@ class PokeSoundEngine {
       }
     }
 
-    const targetVol = this.isBgmMuted ? 0 : this.bgmVolume;
-
     if (track === 'victory' || newAudio.paused) {
       try {
         newAudio.currentTime = 0;
@@ -226,19 +247,25 @@ class PokeSoundEngine {
     newAudio.volume = 0;
 
     newAudio.play().then(() => {
+      if (this.currentTrack !== track) {
+        newAudio.pause();
+        return;
+      }
       const startTime = performance.now();
+      const prevStartVol = prevAudio ? prevAudio.volume : 0;
       if (this.fadeTimer) clearInterval(this.fadeTimer);
 
       this.fadeTimer = setInterval(() => {
         const elapsed = performance.now() - startTime;
         const progress = Math.min(1, elapsed / Math.max(1, fadeMs));
+        const liveTargetVol = this.isBgmMuted ? 0 : this.bgmVolume;
 
         if (newAudio && !newAudio.paused) {
-          newAudio.volume = targetVol * progress;
+          newAudio.volume = liveTargetVol * progress;
         }
 
         if (prevAudio && prevAudio !== newAudio) {
-          prevAudio.volume = Math.max(0, targetVol * (1 - progress));
+          prevAudio.volume = Math.max(0, prevStartVol * (1 - progress));
           if (progress >= 1) {
             prevAudio.pause();
             try { prevAudio.currentTime = 0; } catch (e) {}
@@ -351,12 +378,19 @@ class PokeSoundEngine {
     return this.toggleBgmMute();
   }
 
+  get volume() {
+    return this.bgmVolume;
+  }
+
   get isMuted() {
     return this.isBgmMuted;
   }
 
   stop(fadeMs = 300) {
-    if (this.fadeTimer) clearInterval(this.fadeTimer);
+    if (this.fadeTimer) {
+      clearInterval(this.fadeTimer);
+      this.fadeTimer = null;
+    }
     if (!this.activeBgm) {
       this.currentTrack = null;
       this.isPinchActive = false;
@@ -364,6 +398,8 @@ class PokeSoundEngine {
     }
 
     const audio = this.activeBgm;
+    this.activeBgm = null;
+    this._stoppingAudio = audio;
     const startVol = audio.volume;
     const startTime = performance.now();
 
@@ -376,6 +412,7 @@ class PokeSoundEngine {
         this.fadeTimer = null;
         audio.pause();
         try { audio.currentTime = 0; } catch (e) {}
+        if (this._stoppingAudio === audio) this._stoppingAudio = null;
       }
     }, 30);
 
